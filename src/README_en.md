@@ -1,12 +1,12 @@
 ﻿CharRecog : How To Build
 =====================
 
-Here are an explanation of my building environment and
-some instructions about how to build the program `CharRecog.exe`.
+Here are the explanation of my building environment and
+some instructions about how to build `CharRecog.exe`.
 
 Environment
 ----------
-OS : Windows 7, 64 bit version
+OS : Windows 7, 64 bit version  
 RAM : 8GB
 
 Additional Softwares
@@ -24,22 +24,22 @@ Additional Softwares
 + C++ AMP BLAS Library 1.0  
   [You can download it from here.][ampblas]
   
-Procedure
---------
-1. Open `src/CharRecog.vcxproj` by Visual Studio.
+Building Steps
+-----------
+1. Open `src/CharRecog.vcxproj` in Visual Studio.
 1. Open the property page of the project, and adjust the following settings according to the actual environment.
- - Configuration Properties -> VC++ directories → include directories
- - Configuration Properties -> VC++ directories → library directories
+ - Configuration Properties -> VC++ directories -> include directories
+ - Configuration Properties -> VC++ directories -> library directories
 1. Choose the correct configuration (Release/Debug) and platform (win32/x64), and build the project.
 
 Tips
 ----
-+ If you prefer doing calculations in 'double', undefine `REAL_IS_FLOAT` defined in `config.h`.
++ If you prefer doing all the calculations in 'double', undefine `REAL_IS_FLOAT` defined in `config.h`.
 + Log messages will be written in `log/log.txt` by default.
   To stop it, undefine `DEBUG_OUTPUT_LOG` defined in `config.h`.
   
 Ken Sakakibara  
-Email: ken.sakakibar@gmail.com
+Email: ken.sakakibar@gmail.com  
 Blog: [http://kensak.github.io/](http://kensak.github.io/)  
 GitHub: [https://github.com/kensak](https://github.com/kensak)  
 Twitter: KenSakakibar

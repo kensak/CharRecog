@@ -5,7 +5,7 @@
 
 環境
 ----
-OS : Windows 7 64 ビット版
+OS : Windows 7 64 ビット版  
 RAM : 8GB
 
 必要なもの
@@ -29,7 +29,7 @@ RAM : 8GB
 1. プロジェクトのプロパティを開き、以下の項目を実際の環境に合わせて正しく設定します。
  - 構成プロパティ → VC++ ディレクトリ → インクルード　ディレクトリ
  - 構成プロパティ → VC++ ディレクトリ → ライブラリ　ディレクトリ
-1. 構成（Release/Debug）とプラットフォーム(win32/x64)を正しくセットしてビルドしてください。
+1. 構成 （Release/Debug） とプラットフォーム (win32/x64) を正しくセットしてビルドしてください。
 
 ヒント
 ----
@@ -39,7 +39,7 @@ RAM : 8GB
   これを禁止するには `config.h` で定義されている `DEBUG_OUTPUT_LOG` を未定義にしてください。
   
 榊原　研  
-Email: ken.sakakibar@gmail.com
+Email: ken.sakakibar@gmail.com  
 Blog: [http://kensak.github.io/](http://kensak.github.io/)  
 GitHub: [https://github.com/kensak](https://github.com/kensak)  
 Twitter: KenSakakibar

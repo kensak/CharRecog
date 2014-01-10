@@ -58,7 +58,7 @@ License
 Dual licensed under the [MIT license][MIT] and [GPL v2 license][GPL].
 
 Ken Sakakibara  
-Email: ken.sakakibar@gmail.com
+Email: ken.sakakibar@gmail.com  
 Blog: [http://kensak.github.io/](http://kensak.github.io/)  
 GitHub: [https://github.com/kensak](https://github.com/kensak)  
 Twitter: KenSakakibar
