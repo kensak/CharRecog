@@ -23,8 +23,8 @@ uncompress and put them in `data\MNIST` folder.
 and inside them you will find PNG image files.
 
 4. `demo-MNIST.bat` in the root folder will start training the network.
-It loops 200 times, and the recognition rate of both the training and testing set will be calculated every 10 loops.
-After the training, weight of three perceptron layers will be written down as image files.
+It iterates for 200 times, and the recognition rate of both the training and testing set will be calculated every 10 loops.
+After the training, the weights of three perceptron layers will be written down as image files.
 The parameters of the network will be written in `NN_params.bin` and is ready for further prediction tasks.
 For example, the command line
 ```
@@ -34,22 +34,22 @@ will start the recalculation of the recognition rate for the testing set.
 
 Features
 -------
-+ parallel processing : CharRecog exploits multi-core CPUs and GPUs for speeding up,
++ Parallel processing : CharRecog exploits multi-core CPUs and GPUs for speeding up,
   by paralellizing the processing through Intel TBBÅAOpenMP and C++ AMP.
-+ avoid loops : whenever possible, CharRecog makes use of matrix calculations insted of loops.
-+ support of new technologies : CharRecog supports new NN technologies such as autoencoding,
++ Matrix operations instead of loops : whenever possible, CharRecog makes use of matrix calculations insted of loops.
++ Support of new technologies : CharRecog supports new NN technologies such as autoencoding,
   convolutional layer, max pooling, maxout, dropout, random affine tranformation of input images.
-+ capability of 'double' calculations : the included exe does (almost) all the calculations in float.
++ Capability of 'double' calculations : the included exe does (almost) all the calculations in float.
   You can enable the calculations in double by modifying one line in the source code and rebuilding.
-+ weight image output : you can output the weights of the layers as an image file.
++ Weight image output : you can output the weights of the layers as an image file.
  
 Command Options
 --------------
-Refer to the manuals in doc folder.
+Refer to the manuals in `doc` folder.
  
 How To Build
 -----------
-Refer to the file: `src\ReadMe.txt`.
+Refer to the file: [`src\ReadMe_en.txt`](./src/ReadMe_en.txt).
 
 License
 -------
