@@ -2,7 +2,7 @@ CharRecog
 =========
 ニューラルネットを使った文字認識エンジンです。  
 
-![autoencode 後の重み画像](https://github.com/kensak/CharRecog.git/AE_w_image.png "autoencode 後の重み画像")
+![autoencode 後の重み画像](./AE_w_image.png "autoencode 後の重み画像")
 
 動作条件
 --------
