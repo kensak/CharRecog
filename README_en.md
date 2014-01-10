@@ -1,8 +1,7 @@
 CharRecog
 =========
 ニューラルネットを使った文字認識エンジンです。  
-
-![autoencode 後の重み画像]({{ site.url }}/AE_w_image.png "autoencode 後の重み画像")
+A character recognition engine using a neural network.
 
 動作条件
 --------
@@ -53,7 +52,7 @@ src\ReadMe.txt をご覧ください。
 
 ライセンス
 --------
-[MIT ライセンス][MIT] と [GPL v2 ライセンス][GPL] のデュアル・ライセンスにより配布しています。
+Dual licensed under the [MIT license][MIT] and [GPL v2 license][GPL].
 
 [MIT]: http://www.opensource.org/licenses/mit-license.php
 [GPL]: http://www.gnu.org/licenses/gpl.html
