@@ -15,8 +15,9 @@ OS は Windows 7 またはそれ以上の 64 ビット版が必要です。
 ----------------------------------------
 
 1. GitHub からローカルにモジュール一式をダウンロードします。
-
-    git clone https://github.com/kensak/CharRecog.git
+```
+git clone https://github.com/kensak/CharRecog.git
+```
 
 2. [THE MNIST DATABASE of handwritten digits のサイト](http://yann.lecun.com/exdb/mnist/)
 から 4 つのデータファイルをダウンロードし、解凍してから data\MNIST フォルダーに置きます。
@@ -29,9 +30,9 @@ png 形式の文字画像が書き込まれます。
 学習が終了すると、3 つのパーセプトロン・レイヤーの重み情報を画像にして出力します。
 ネットワークの情報は NN_params.bin に出力され、文字認識に使用できます。  
 例えば、
-
-    bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
-
+```
+bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
+```
 を実行すると、評価セットの認識率を再び計算します。
 
  
