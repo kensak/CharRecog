@@ -7,8 +7,10 @@ A character recognition engine using neural networks.
 
 動作条件
 --------
-OS は Windows 7 またはそれ以上の 64 ビット版が必要です。
+OS : Windows 7 またはそれ以上、64 ビット版  
 （ソースからは 32 ビット版をビルドすることもできます。）
+
+RAM : 8GB 以上
 
 
 まず動かしてみたい方へ（MNIST画像セットの学習）
@@ -35,39 +37,26 @@ bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
 ```
 を実行すると、評価セットの認識率を再び計算します。
 
+特徴
+----
++ 並列処理 : インテル TBB、OpenMP, C++ AMP などを使い、マルチコア CPU や GPU による並列処理をおこなっています。
++ 行列計算による高速化 : すべてのサンプル画像を処理する際、できるだけループを回さず一回の行列計算により処理をおこないます。
++ さまざまな手法への対応 : autoencoding, convolutional layer, max pooling, maxout, dropout の各手法や
+  入力画像のランダムな affine 変換などに対応しています。
++ ビルド済みの exe では float で計算をおこないますが、ソースを一ヶ所変更してリビルドすれば double にも対応します。
++ 学習された重みを画像として出力できます。
  
 パラメータの解説
-----------------
-リストの間に空行を挟むと、それぞれのリストに `<p>` タグが挿入され、行間が
-広くなります。
+--------------
+doc フォルダーにあるマニュアルをご覧ください。
  
-    def MyFunction(param1, param2, ...)
- 
-+   `param1` :
-    _パラメータ1_ の説明
- 
-+   `param2` :
-    _パラメータ2_ の説明
- 
-関連情報
---------
-### リンク、ネストしたリスト
-1. [リンク1](http://example.com/ "リンクのタイトル")
-    * ![画像1](http://github.com/unicorn.png "画像のタイトル")
-2. [リンク2][link]
-    - [![画像2][image]](https://github.com/)
- 
-  [link]: http://example.com/ "インデックス型のリンク"
-  [image]: http://github.com/github.png "インデックス型の画像"
- 
-### 引用、ネストした引用
-> これは引用です。
->
-> > スペースを挟んで `>` を重ねると、引用の中で引用ができますが、
-> > GitHubの場合、1行前に空の引用が無いと、正しくマークアップされません。
- 
+ ビルドの方法
+-----------
+src\ReadMe.txt をご覧ください。
+
 ライセンス
 --------
-Dual licensed under the [MIT license][MIT] and [GPL license][GPL].
+Dual licensed under the [MIT license][MIT] and [GPL v2 license][GPL].
+
 [MIT]: http://www.opensource.org/licenses/mit-license.php
 [GPL]: http://www.gnu.org/licenses/gpl.html
