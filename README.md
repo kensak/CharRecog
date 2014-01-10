@@ -1,8 +1,8 @@
 CharRecog
 =========
 
-ニューラルネットを使った文字認識エンジン  
-a character recognition engine using neural networks
+ニューラルネットを使った文字認識エンジンです。
+A character recognition engine using neural networks.
 
 
 動作条件
@@ -15,20 +15,23 @@ OS は Windows 7 またはそれ以上の 64 ビット版が必要です。
 ----------------------------------------
 
 1. GitHub からローカルにモジュール一式をダウンロードします。
+
     git clone https://github.com/kensak/CharRecog.git
 
-1. [THE MNIST DATABASE of handwritten digits のサイト](http://yann.lecun.com/exdb/mnist/)
+2. [THE MNIST DATABASE of handwritten digits のサイト](http://yann.lecun.com/exdb/mnist/)
 から 4 つのデータファイルをダウンロードし、解凍してから data\MNIST フォルダーに置きます。
 
-2. 同じフォルダーにある run.bat を実行すると、MNIST_test_data と MNIST_train_data というフォルダーができ、
+3. 同じフォルダーにある run.bat を実行すると、MNIST_test_data と MNIST_train_data というフォルダーができ、
 png 形式の文字画像が書き込まれます。
 
-3. ルートにある demo-MNIST.bat を実行すると学習が始まります。
+4. ルートにある demo-MNIST.bat を実行すると学習が始まります。
 200 ループを行い、10 ループごとに学習セットと評価セットでの認識率を計算します。
 学習が終了すると、3 つのパーセプトロン・レイヤーの重み情報を画像にして出力します。
 ネットワークの情報は NN_params.bin に出力され、文字認識に使用できます。  
 例えば、
+
     bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
+
 を実行すると、評価セットの認識率を再び計算します。
 
  
