@@ -21,13 +21,13 @@ git clone https://github.com/kensak/CharRecog.git
 2. [THE MNIST DATABASE of handwritten digits のサイト](http://yann.lecun.com/exdb/mnist/)
 から 4 つのデータファイルをダウンロードし、解凍してから data\MNIST フォルダーに置きます。
 
-3. 同じフォルダーにある run.bat を実行すると、MNIST_test_data と MNIST_train_data というフォルダーができ、
+3. 同じフォルダーにある `run.bat` を実行すると、`MNIST_test_data` と `MNIST_train_data` というフォルダーができ、
 png 形式の文字画像が書き込まれます。
 
-4. ルートにある demo-MNIST.bat を実行すると学習が始まります。
+4. ルートにある `demo-MNIST.bat` を実行すると学習が始まります。
 200 ループを行い、10 ループごとに学習セットと評価セットでの認識率を計算します。
 学習が終了すると、3 つのパーセプトロン・レイヤーの重み情報を画像にして出力します。
-ネットワークの情報は NN_params.bin に出力され、文字認識に使用できます。  
+ネットワークの情報は `NN_params.bin` に出力され、文字認識に使用できます。  
 例えば、
 ```
 bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
@@ -45,15 +45,20 @@ bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
  
 パラメータの解説
 --------------
-doc フォルダーにあるマニュアルをご覧ください。
+`doc` フォルダーにあるマニュアルをご覧ください。
  
  ビルドの方法
 -----------
-src\ReadMe.txt をご覧ください。
+[`src\ReadMe.txt`](./src/ReadMe.txt) をご覧ください。
 
 ライセンス
 --------
 [MIT ライセンス][MIT] と [GPL v2 ライセンス][GPL] のデュアル・ライセンスにより配布しています。
+
+榊原　研
+Blog: [http://kensak.github.io/](http://kensak.github.io/)
+GitHub: [https://github.com/kensak](https://github.com/kensak)
+Twitter: KenSakakibar
 
 [MIT]: http://www.opensource.org/licenses/mit-license.php
 [GPL]: http://www.gnu.org/licenses/gpl.html

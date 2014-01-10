@@ -57,5 +57,10 @@ License
 -------
 Dual licensed under the [MIT license][MIT] and [GPL v2 license][GPL].
 
+Ken Sakakibara
+Blog: [http://kensak.github.io/](http://kensak.github.io/)
+GitHub: [https://github.com/kensak](https://github.com/kensak)
+Twitter: KenSakakibar
+
 [MIT]: http://www.opensource.org/licenses/mit-license.php
 [GPL]: http://www.gnu.org/licenses/gpl.html
