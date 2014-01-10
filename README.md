@@ -49,7 +49,7 @@ bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
  
  ビルドの方法
 -----------
-[`src\ReadMe.txt`](./src/ReadMe.txt) をご覧ください。
+[`src\README.md`](./src/README.md) をご覧ください。
 
 ライセンス
 --------
