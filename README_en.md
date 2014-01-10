@@ -43,7 +43,7 @@ Features
   convolutional layer, max pooling, maxout, dropout, random affine tranformation of input images.
 + Capability of 'double' calculations : the included exe does (almost) all the calculations in float.
   You can enable the calculations in double by modifying one line in the source code and rebuilding.
-+ Weight image output : you can output the weights of the layers as an image file.
++ Weight image output : you can output the weights of a perceptron or convolution layer as an image file.
  
 Command Options
 --------------
