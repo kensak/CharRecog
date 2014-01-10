@@ -55,9 +55,9 @@ bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
 --------
 [MIT ライセンス][MIT] と [GPL v2 ライセンス][GPL] のデュアル・ライセンスにより配布しています。
 
-榊原　研
-Blog: [http://kensak.github.io/](http://kensak.github.io/)
-GitHub: [https://github.com/kensak](https://github.com/kensak)
+榊原　研  
+Blog: [http://kensak.github.io/](http://kensak.github.io/)  
+GitHub: [https://github.com/kensak](https://github.com/kensak)  
 Twitter: KenSakakibar
 
 [MIT]: http://www.opensource.org/licenses/mit-license.php
