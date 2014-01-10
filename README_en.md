@@ -2,6 +2,8 @@ CharRecog
 =========
 CharRecog is a character recognition engine. It is designed so as to test various models and  settings of neural networks.
 
+![the weights after the autoencoding](./AE_w_image.png "the weights after the autoencoding")
+
 Operating Conditions
 ----------------
 OS : Windows 7 and above, 64 bit version  
