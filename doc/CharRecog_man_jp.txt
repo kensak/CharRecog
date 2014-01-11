@@ -1,0 +1,134 @@
+名前
+    CharRecog - ニューラルネットを使った文字認識エンジン
+
+書式
+    CharRecog {options} <command> [<data-dir> [<data-dir2>]]
+
+説明
+    プログラム CharRecog はニューラルネットを使った文字認識エンジンです。  
+    
+    <command> の値により以下の動作をおこないます。
+    TRAIN   <data-dir> にある複数の画像ファイルを元に、それらの属するクラスを学習します。  
+            画像フォーマットは　-e オプションに含まれる種別に対応します。  
+             それぞれの画像ファイルの名前の一文字目 (2 バイト文字の場合はshift-JISコードの値)を  
+             その文字のクラスとみなします。
+             -p オプションで指定されるパラメターファイルがすでにあれば、そこからネットワークの
+             パラメターを読み、さらに学習をおこないます。
+            パラメターファイルがなければ -L オプションで指定される値からネットワークを構築し、
+            ゼロから学習をおこないます。
+    TEST    <data-dir> にある画像のクラスを予想します。
+            -u オプションがある場合、それぞれの画像の予想クラスを表示します。
+            -u オプションがない場合、ファイル名の一文字目 (2 バイト文字の場合はshift-JISコードの値)
+            を その文字の真のクラスとみなし、予想されたクラスと一致した文字の割合（認識率）
+            を表示します。-v オプションがあれば、それぞれの文字の予想クラスも表示します。
+    AE      Autoencoding による学習をおこないます。その他の点は TRAIN の場合と同様です。
+    WIMAGE  各レイヤーの重みを画像にして出力します。
+                
+    ログは log/log.txt に書き込まれます。
+
+オプション
+
+    -v      詳細表示モード
+    -L STR  レイヤーのパラメターを文字列で指定します。
+            文字列は '_' で連結された複数のセグメントから成り、
+            一つのレイヤーが一つのセグメントに対応します。
+            それぞれのセグメントは <type>,<param1>,<param2>,... という書式を持ちます。
+            type: P   tanh をアクティベーション関数とするパーセプトロン・レイヤー　
+                      parameters : inSize,outSize[,dropoutRatio]
+                  L   恒等関数をアクティベーション関数とするパーセプトロン・レイヤー　
+                      parameters : inSize,outSize[,dropoutRatio[,maxWeightNorm]]
+                  C   tanh をアクティベーション関数とするコンボリューション・レイヤー　
+                      parameters : inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps
+                  M   Max Pool レイヤー　
+                      parameters : filterH,filterW
+                  S   Softmax レイヤー　
+                      parameters : inOutSize
+    -m STR  バックプロパゲーションにおいて使用するアルゴリズム。
+            BPROP[,<initial learning rate>,<final learning rate>,<learning rate decay ratio>,
+                   <initial momentum>,<final momentum>,<momentum decay epoch>]
+                標準的 backprop (gradient descent) によって重みを更新します。
+            RPROP[,dw0,dw_plus,dw_minus,dw_max,dw_min]
+                RPROP によって重みを更新します。（デフォルト）
+    -f NUM  TRAIN のとき、訓練をおこなう最初のレイヤー番号。（デフォルト: 0）
+    -l NUM  AE のとき、訓練をおこなう最期のレイヤー番号。（デフォルト: 最期のレイヤーの番号）
+    -h NUM  画像の高さ。
+    -w NUM  画像の幅。
+            実際の画像のサイズがこれと異なるときは、画像はリサイズされます。
+    -i NUM  学習の繰り返し回数。（デフォルト: 100）
+    -b      画像の背景が黒の場合指定する。
+    -e STR  サポートする画像ファイル形式を指定する。
+            例: $JPG$JPEG$PNG$TIFF$
+    -u      TEST のとき、真のクラスが分からない場合は指定する。
+    -c      画像の前処理において、周囲の余白を取り除く。
+    -a      各繰り返しの最初に、ランダムなアファイン変換を画像に施す。
+    -p STR  ネットワークのパラメターファイル名。（デフォルト: NN_params.bin）
+    -E NUM  TRAIN のとき、この繰り返し回数ごとに training set の認識率を計算する。
+            <data-dir2> が指定されていれば、同時にこのフォルダーにある画像の認識率も計算する。
+    -C      WIMAGE のとき、各レイヤーの累積重みを画像として出力する。
+
+例
+    1. 標準的なパーセプトロン
+
+    CharRecog -b -h 28 -w 28 -L P,784,500,0.2_P,500,500_P,500,10_S,10 -i 200 -E 10 -m RPROP (続く)
+        TRAIN train_data test_data
+    
+        背景が黒で 28x28 の画像を使用する。
+        次の 4 つのレイヤーからなるモデルを使い、RPORP で 200 回繰り返し学習をおこなう。
+        10 ループごとに train set と test set の認識率を計算し表示する。
+     
+        Tanh perceptron layer : 784 -> 500, dropout ratio = 0.200000
+        Tanh perceptron layer : 500 -> 500
+        Tanh perceptron layer : 500 -> 10
+        Softmax layer : 10 -> 10
+    
+    2. Maxout + Dropout
+
+    CharRecog -b -h 28 -w 28 -L L,784,500,0.2_M,1,2_L,250,500,0_M,1,2_L,250,10,0_S,10 -i 200 (続く)
+        -E 10 -m RPROP TRAIN train_data test_data
+
+		上の例と同様、ただし次の 6 つのレイヤーからなるモデルで学習をおこなう。
+		
+        Linear perceptron layer : 784 -> 500, dropout ratio = 0.200000
+        Maxpool layer : filter 1x2
+        Linear perceptron layer : 250 -> 500
+        Maxpool layer : filter 1x2
+        Linear perceptron layer : 250 -> 10
+        Softmax layer : 10 -> 10
+		
+    3. Autoencoder
+
+	CharRecog -b -h 28 -w 28 -L P,784,500,0.2_P,500,500_P,500,10_S,10 -i 200 -l 1 -m RPROP AE train_data
+	
+	    Autoencoding によりレイヤー 0 と 1 の重みを学習する。
+
+    4. Convokutional Network
+        
+    CharRecog -b -h 28 -w 28 -L C,28,28,5,5,1,16_M,2,2_C,12,12,5,5,16,32_M,2,2_L,512,10_S,10 (続く)
+        -i 200 -E 10 -m RPROP TRAIN train_data test_data
+
+		次の 6 つのレイヤーからなるコンボリューション・ネットワークで学習をおこなう。
+		
+		Convolution layer : 1@28x28 -> 16@24x24 (filter 5x5)
+		Maxpool layer : filter 2x2
+		Convolution layer : 16@12x12 -> 32@8x8 (filter 5x5)
+		Maxpool layer : filter 2x2
+		Linear perceptron layer : 512 -> 10
+		Softmax layer : 10 -> 10
+  
+    5. テスト用画像セットの評価
+
+    CharRecog -v -b -h 28 -w 28 TEST test_data
+
+    6. 重みを画像として出力
+
+    CharRecog -C WIMAGE
+
+        コンボリューション・ネットワークの場合は -C オプションは使えません。
+
+作者
+    榊原 研
+
+バグ報告
+    バグ報告は <ken.sakakibar@gmail.com> までお願いします。
+
+(END)
