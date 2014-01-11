@@ -7,9 +7,9 @@ SYNOPSIS
 DESCRIPTION
     CharRecog is a character recognition engine using the neural network.
 
-    Using CharRecog, you can train a wide range of network model by a set of image files,
+    CharRecog enables you to train a wide range of network models by a set of image files,
     initialize weights by autoencoding, calculate recognition (or error) rate from a set of images,
-    or make image files out of layers' weight data.
+    or make image files out of layers' weight parameters.
     
     CharRecog supports following commands.
 
@@ -35,7 +35,7 @@ DESCRIPTION
 OPTIONS
     -v      verbose mode
     -L STR  layer param string to specify layer architecture,
-            which consists of layer param segment, concatenated by '_'.
+            which consists of layer param segments, concatenated by '_'.
             Each segment is of format <type>,<param1>,<param2>,...
             type: P for perceptron layer with tanh activation function, followed by
                     inSize,outSize[,dropoutRatio]
@@ -59,12 +59,12 @@ OPTIONS
     -w NUM  width of input images
             If the actual size is different, the image will be resized.
     -i NUM  number of iteration for training (default 100),
-    -b      background of input images is black
-    -e STR  list of supported image file extensions.
+    -b      specify if the background of input images is black
+    -e STR  list of supported image file extensions
             Example: $JPG$JPEG$PNG$TIFF$
-    -u      true answer is unknown when testing
+    -u      specify if the true class is unknown when testing
     -c      in the preprocessing, cut out the region containing the character
-    -a      on each epoch, apply random affine transformations to the input images
+    -a      on each epoch, apply random affine transformations to the training images
     -p STR  name of the neural network parameter file (default: NN_params.bin)
     -E NUM  if TRAIN, calculate the recognition error rate every this epochs
     -C      if WIMAGE, output cumulative weights as images
@@ -73,7 +73,7 @@ EXAMPLES
 
     1. Standard Perceptron
 
-    CharRecog -b -h 28 -w 28 -L P,784,500,0.2_P,500,500_P,500,10_S,10 -i 200 -E 10 -m RPROP (‘±‚­)
+    CharRecog -b -h 28 -w 28 -L P,784,500,0.2_P,500,500_P,500,10_S,10 -i 200 -E 10 -m RPROP
         TRAIN train_data test_data
     
     The images have black backgrounds, and of size 28x28.
@@ -88,7 +88,7 @@ EXAMPLES
     
     2. Maxout + Dropout
 
-    CharRecog -b -h 28 -w 28 -L L,784,500,0.2_M,1,2_L,250,500,0_M,1,2_L,250,10,0_S,10 -i 200 (‘±‚­)
+    CharRecog -b -h 28 -w 28 -L L,784,500,0.2_M,1,2_L,250,500,0_M,1,2_L,250,10,0_S,10 -i 200
         -E 10 -m RPROP TRAIN train_data test_data
 
     Same as example 1, with the following layes.
@@ -108,7 +108,7 @@ EXAMPLES
 
     4. Convokutional Network
         
-    CharRecog -b -h 28 -w 28 -L C,28,28,5,5,1,16_M,2,2_C,12,12,5,5,16,32_M,2,2_L,512,10_S,10 (‘±‚­)
+    CharRecog -b -h 28 -w 28 -L C,28,28,5,5,1,16_M,2,2_C,12,12,5,5,16,32_M,2,2_L,512,10_S,10
         -i 200 -E 10 -m RPROP TRAIN train_data test_data
 
     Train by the following convolutional network.

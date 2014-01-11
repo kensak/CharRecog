@@ -47,7 +47,7 @@ Features
  
 Command Options
 --------------
-Refer to the manuals in `doc` folder.
+Refer to the manual in `doc` folder.
  
 How To Build
 -----------
