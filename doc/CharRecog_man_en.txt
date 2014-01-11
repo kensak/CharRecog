@@ -1,57 +1,146 @@
-#NAME
-CharRecog - ニューラルネットを使った文字認識エンジン
+NAME
+    CharRecog - a character recognition engine using the neural network
 
-#SYNOPSIS
-CharRecog []
+SYNOPSIS
+    CharRecog {options} <command> [<data-dir> [<data-dir2>]]
 
-#DESCRIPTION
-プログラム CharRecog は
+DESCRIPTION
+    CharRecog is a character recognition engine using the neural network.
 
-#OPTIONS
-    "  -v        verbose mode\n"
-    "  -L STR    layer param string to specify layer architecture,\n"
-    "            which consists of layer param segment, concatenated by '_'.\n"
-    "            Each segment is of format <type>,<param1>,<param2>,...\n"
-    "            type: P for perceptron layer with tanh activation function, followed by\n"
-    "                    inSize,outSize[,dropoutRatio]\n"
-    "                  L for perceptron layer with identity activation function, followed by\n"
-    "                    inSize,outSize[,dropoutRatio[,maxWeightNorm]]\n"
-    "                  C for convolution layer with tanh activation function, followed by\n"
-    "                    inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps\n"
-    "                  M for max-pool or maxout layer, followed by\n"
-    "                    filterH,filterW\n"
-    "                  S for softmax layer, followed by\n"
-    "                    inOutSize\n"
-    "  -m STR    training method and its parameters\n"
-    "            standard backprop:\n"
-    "              BPROP[,<initial learning rate>,<final learning rate>,<learning rate decay ratio>,\n"
-    "                    <initial momentum>,<final momentum>,<momentum decay epoch>]\n"
-    "            rprop (default):\n"
-    "              RPROP[,dw0,dw_plus,dw_minus,dw_max,dw_min]\n"
-    "  -f NUM    index of the first layer to train for TRAIN\n"
-    "  -l NUM    index of the last layer to train for AE\n"
-    "  -h NUM    height of input images\n"
-    "  -w NUM    width of input images\n"
-    "            If the actual size is different, the image will be resized.\n"
-    "  -i NUM    number of iteration for training (default 100),\n"
-    "            max number of samples to evaluate for testing (default INT_MAX)\n"
-    "  -b        background of input images is black\n"
-    "  -e STR    list of supported image file extensions.\n"
-    "            Example: \"$JPG$JPEG$PNG$TIFF$\""
-    "  -u        true answer is unknown when testing\n"
-    "  -c        in the preprocessing, cut out the region containing the character\n"
-    "  -a        on each epoch, apply random affine transformations to the input images\n"
-    "  -p STR    name of the neural network parameter file (default: NN_params.bin)\n"
-    "  -E NUM    when the command is TRAIN, calculate the recognition error rate every this epochs\n"
-    "  -C        when the command is WIMAGE, output cumulative weights as images\n"
+    Using CharRecog, you can train a wide range of network model by a set of image files,
+    initialize weights by autoencoding, calculate recognition (or error) rate from a set of images,
+    or make image files out of layers' weight data.
+    
+    CharRecog supports following commands.
 
-#詳細
-ログは log/log.txt に書き込まれる。
+    TRAIN   Train the network for the classification task, using the training image files
+            in <data-dir>.
+            The class of an image is identified by the first letter in the file name.
+            -p option specifies the name of the network parameter file.
+            If the parameter file already exists, CharRecog reads the parameters from it and
+            starts training further using the training files.
+            If the parameter file does not exist, CharRecog will construct a network model
+            from -L option string, and starts training from scratch.
+    TEST    Predict the class of the images in <data-dir>.
+            With -u option, CharRecog just predicts the class and print it for each image.
+            Without -u option, the first letter in the image file name will be considered
+            as the true class, and the recognition rate of the whole set of images will be
+            calculated (-v option prints the predicted class for each image).
+    AE      Train by autoencoding. Otherwise this command is just like TRAIN.
+    WIMAGE  Output the weights of the layers as images.
+                
+    Log messages willbe written into log/log.txt.
 
-#AUTHOR
-榊原	研
 
-#REPORTING BUGS
-Report bugs to <ken.sakakibar@gmail.com>.
+OPTIONS
+    -v      verbose mode
+    -L STR  layer param string to specify layer architecture,
+            which consists of layer param segment, concatenated by '_'.
+            Each segment is of format <type>,<param1>,<param2>,...
+            type: P for perceptron layer with tanh activation function, followed by
+                    inSize,outSize[,dropoutRatio]
+                  L for perceptron layer with identity activation function, followed by
+                    inSize,outSize[,dropoutRatio[,maxWeightNorm]]
+                  C for convolution layer with tanh activation function, followed by
+                    inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps
+                  M for max-pool or maxout layer, followed by
+                    filterH,filterW
+                  S for softmax layer, followed by
+                    inOutSize
+    -m STR  training method and its parameters
+            BPROP[,<initial learning rate>,<final learning rate>,<learning rate decay ratio>,
+                   <initial momentum>,<final momentum>,<momentum decay epoch>]
+                standard backprop algorithm
+            RPROP[,dw0,dw_plus,dw_minus,dw_max,dw_min]
+                rprop algorithm(default)
+    -f NUM  index of the first layer to train for TRAIN (default: 0)
+    -l NUM  index of the last layer to train for AE (default: the index of the last layer)
+    -h NUM  height of input images
+    -w NUM  width of input images
+            If the actual size is different, the image will be resized.
+    -i NUM  number of iteration for training (default 100),
+    -b      background of input images is black
+    -e STR  list of supported image file extensions.
+            Example: $JPG$JPEG$PNG$TIFF$
+    -u      true answer is unknown when testing
+    -c      in the preprocessing, cut out the region containing the character
+    -a      on each epoch, apply random affine transformations to the input images
+    -p STR  name of the neural network parameter file (default: NN_params.bin)
+    -E NUM  if TRAIN, calculate the recognition error rate every this epochs
+    -C      if WIMAGE, output cumulative weights as images
+
+EXAMPLES
+
+    1. Standard Perceptron
+
+    CharRecog -b -h 28 -w 28 -L P,784,500,0.2_P,500,500_P,500,10_S,10 -i 200 -E 10 -m RPROP (続く)
+        TRAIN train_data test_data
+    
+    The images have black backgrounds, and of size 28x28.
+    It iterates for 200 times, and the recognition rate of both the training and test set
+    will be calculated every 10 iterations.
+    The model has the following layes:
+     
+        Tanh perceptron layer : 784 -> 500, dropout ratio = 0.200000
+        Tanh perceptron layer : 500 -> 500
+        Tanh perceptron layer : 500 -> 10
+        Softmax layer : 10 -> 10
+    
+    2. Maxout + Dropout
+
+    CharRecog -b -h 28 -w 28 -L L,784,500,0.2_M,1,2_L,250,500,0_M,1,2_L,250,10,0_S,10 -i 200 (続く)
+        -E 10 -m RPROP TRAIN train_data test_data
+
+    Same as example 1, with the following layes.
+        
+        Linear perceptron layer : 784 -> 500, dropout ratio = 0.200000
+        Maxpool layer : filter 1x2
+        Linear perceptron layer : 250 -> 500
+        Maxpool layer : filter 1x2
+        Linear perceptron layer : 250 -> 10
+        Softmax layer : 10 -> 10
+        
+    3. Autoencoder
+
+    CharRecog -b -h 28 -w 28 -L P,784,500,0.2_P,500,500_P,500,10_S,10 -i 200 -l 1 -m RPROP AE train_data
+
+    Train layer 0 and 1 by autoencoding.
+
+    4. Convokutional Network
+        
+    CharRecog -b -h 28 -w 28 -L C,28,28,5,5,1,16_M,2,2_C,12,12,5,5,16,32_M,2,2_L,512,10_S,10 (続く)
+        -i 200 -E 10 -m RPROP TRAIN train_data test_data
+
+    Train by the following convolutional network.
+        
+        Convolution layer : 1@28x28 -> 16@24x24 (filter 5x5)
+        Maxpool layer : filter 2x2
+        Convolution layer : 16@12x12 -> 32@8x8 (filter 5x5)
+        Maxpool layer : filter 2x2
+        Linear perceptron layer : 512 -> 10
+        Softmax layer : 10 -> 10
+  
+    5. Evaluation of test set
+
+    CharRecog -v -b -h 28 -w 28 TEST test_data
+
+    6. Ouput weight images
+
+    CharRecog -C WIMAGE
+
+    -C option does not work for covolutional networks.
+
+
+LICENSE
+    Dual licensed under the MIT license and GPL v2 license.
+
+    MIT license    : http://www.opensource.org/licenses/mit-license.php
+    GPL v2 license : http://www.gnu.org/licenses/gpl.html
+
+AUTHOR
+    Ken Sakakibara
+
+REPORTING BUGS
+    Report bugs to <ken.sakakibar@gmail.com>.
 
 (END)
