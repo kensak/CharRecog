@@ -106,7 +106,7 @@ EXAMPLES
 
     Train layer 0 and 1 by autoencoding.
 
-    4. Convokutional Network
+    4. Convolutional Network
         
     CharRecog -b -h 28 -w 28 -L C,28,28,5,5,1,16_M,2,2_C,12,12,5,5,16,32_M,2,2_L,512,10_S,10
         -i 200 -E 10 -m RPROP TRAIN train_data test_data
