@@ -51,7 +51,7 @@ Refer to the manuals in `doc` folder.
  
 How To Build
 -----------
-Refer to the file: [`src\README_en.md`](./src/README_en.md).
+Refer to: [`src\README_en.md`](./src/README_en.md).
 
 License
 -------
