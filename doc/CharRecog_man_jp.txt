@@ -38,14 +38,14 @@
                   L   恒等関数をアクティベーション関数とするパーセプトロン・レイヤー　
                       parameters : inSize,outSize[,dropoutRatio[,maxWeightNorm]]
                   C   tanh をアクティベーション関数とするコンボリューション・レイヤー　
-                      parameters : inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps
+                      parameters : inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps[,dropoutRatio]
                   M   Max Pool レイヤー　
                       parameters : filterH,filterW
                   S   Softmax レイヤー　
                       parameters : inOutSize
     -m STR  バックプロパゲーションにおいて使用するアルゴリズム。
             BPROP[,<initial learning rate>,<final learning rate>,<learning rate decay ratio>,
-                   <initial momentum>,<final momentum>,<momentum decay epoch>]
+                   <initial momentum>,<final momentum>,<momentum delta>]
                 標準的 backprop (gradient descent) によって重みを更新します。
             RPROP[,dw0,dw_plus,dw_minus,dw_max,dw_min]
                 RPROP によって重みを更新します。（デフォルト）
@@ -104,7 +104,7 @@
     4. Convolutional Network
         
     CharRecog -b -h 28 -w 28 -L C,28,28,5,5,1,16_M,2,2_C,12,12,5,5,16,32_M,2,2_L,512,10_S,10 (続く)
-        -i 200 -E 10 -m RPROP TRAIN train_data test_data
+        -B 6000 -i 200 -E 10 -m RPROP TRAIN train_data test_data
 
     次の 6 つのレイヤーからなるコンボリューション・ネットワークで学習をおこなう。
         
@@ -124,6 +124,10 @@
     CharRecog -C WIMAGE
 
     コンボリューション・ネットワークの場合は -C オプションは使えません。
+
+履歴
+    2014/01/09  初リリース
+    2014/01/15  ミニバッチに対応。コンボリューション・レイヤーでの Dropout に対応。
 
 ライセンス
     MIT ライセンスと GPL v2 ライセンスのデュアル・ライセンスにより配布しています。

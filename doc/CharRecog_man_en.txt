@@ -42,14 +42,14 @@ OPTIONS
                   L for perceptron layer with identity activation function, followed by
                     inSize,outSize[,dropoutRatio[,maxWeightNorm]]
                   C for convolution layer with tanh activation function, followed by
-                    inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps
+                    inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps[,dropoutRatio]
                   M for max-pool or maxout layer, followed by
                     filterH,filterW
                   S for softmax layer, followed by
                     inOutSize
     -m STR  training method and its parameters
             BPROP[,<initial learning rate>,<final learning rate>,<learning rate decay ratio>,
-                   <initial momentum>,<final momentum>,<momentum decay epoch>]
+                   <initial momentum>,<final momentum>,<momentum delta>]
                 standard backprop algorithm
             RPROP[,dw0,dw_plus,dw_minus,dw_max,dw_min]
                 rprop algorithm(default)
@@ -68,6 +68,7 @@ OPTIONS
     -p STR  name of the neural network parameter file (default: NN_params.bin)
     -E NUM  if TRAIN, calculate the recognition error rate every this epochs
     -C      if WIMAGE, output cumulative weights as images
+    -B      minibatch size
 
 EXAMPLES
 
@@ -109,7 +110,7 @@ EXAMPLES
     4. Convolutional Network
         
     CharRecog -b -h 28 -w 28 -L C,28,28,5,5,1,16_M,2,2_C,12,12,5,5,16,32_M,2,2_L,512,10_S,10
-        -i 200 -E 10 -m RPROP TRAIN train_data test_data
+        -B 6000 -i 200 -E 10 -m RPROP TRAIN train_data test_data
 
     Train by the following convolutional network.
         
@@ -130,6 +131,9 @@ EXAMPLES
 
     -C option does not work for covolutional networks.
 
+HISTORY
+    2014/01/09  First release.
+    2014/01/15  Supports minibatch updates. Supports Dropout on convolutional layers.
 
 LICENSE
     Dual licensed under the MIT license and GPL v2 license.

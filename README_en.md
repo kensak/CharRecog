@@ -27,10 +27,10 @@ and inside them you will find PNG image files.
 4. `demo-MNIST.bat` in the root folder will start training the network.
 It iterates for 200 times, and the recognition rate of both the training and testing set will be calculated every 10 loops.
 After the training, the weights of three perceptron layers will be written down as image files.
-The parameters of the network will be written in `NN_params.bin` and is ready for further prediction tasks.
+The parameters of the network will be written in `NN_maxout.bin` and is ready for further prediction tasks.
 For example, the command line
 ```
-bin64\CharRecog.exe -v -b -h 28 -w 28 TEST data\MNIST\MNIST_test_data
+bin64\CharRecog.exe -v -b -h 28 -w 28 -p NN_maxout.bin TEST data\MNIST\MNIST_test_data
 ```
 will start the recalculation of the recognition rate for the testing set.
 
