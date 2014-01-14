@@ -24,7 +24,7 @@ uncompress and put them in `data\MNIST` folder.
 3. Execute `run.bat` in the same folder. This will create two sub-folders `MNIST_test_data` and `MNIST_train_data`,
 and inside them you will find PNG image files.
 
-4. `demo-MNIST.bat` in the root folder will start training the network.
+4. `demo-MNIST-maxout.bat` in the root folder will start training the network.
 It iterates for 200 times, and the recognition rate of both the training and testing set will be calculated every 10 loops.
 After the training, the weights of three perceptron layers will be written down as image files.
 The parameters of the network will be written in `NN_maxout.bin` and is ready for further prediction tasks.

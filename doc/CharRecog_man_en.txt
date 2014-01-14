@@ -68,7 +68,7 @@ OPTIONS
     -p STR  name of the neural network parameter file (default: NN_params.bin)
     -E NUM  if TRAIN, calculate the recognition error rate every this epochs
     -C      if WIMAGE, output cumulative weights as images
-    -B      minibatch size
+    -B      minibatch size. By default, all the samples will be used for every one update.
 
 EXAMPLES
 
@@ -121,7 +121,7 @@ EXAMPLES
         Linear perceptron layer : 512 -> 10
         Softmax layer : 10 -> 10
   
-    5. Evaluation of test set
+    5. Evaluation of the test set
 
     CharRecog -v -b -h 28 -w 28 TEST test_data
 
