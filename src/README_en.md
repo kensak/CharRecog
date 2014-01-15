@@ -5,12 +5,12 @@ Here are the explanation of my building environment and
 some instructions about how to build `CharRecog.exe`.
 
 Environment
-----------
+-----------
 OS : Windows 7, 64 bit version  
 RAM : 8GB
 
-Additional Softwares
------------------
+Requirements
+------------
 + Micosoft Visual Studio Express 2012 for Windows Desktop  
   [You can download it from here.][MS]
 
@@ -25,7 +25,7 @@ Additional Softwares
   [You can download it from here.][ampblas]
   
 Building Steps
------------
+--------------
 1. Open `src/CharRecog.vcxproj` in Visual Studio.
 1. Open the property page of the project, and adjust the following settings according to the actual environment.
  - Configuration Properties -> VC++ directories -> include directories
