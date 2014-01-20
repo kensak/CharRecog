@@ -22,7 +22,8 @@ git clone https://github.com/kensak/CharRecog.git
 2. Download 4 data files from ["THE MNIST DATABASE of handwritten digits" site](http://yann.lecun.com/exdb/mnist/),
 uncompress and put them in `data\MNIST` folder.
 
-3. Execute `run.bat` in the same folder. This will create two sub-folders `MNIST_test_data` and `MNIST_train_data`,
+3. Execute `run.bat` , or alternatively `extract_images_MNIST.py` (you need Python and PIL library)
+in the same folder. This will create two sub-folders `MNIST_test_data` and `MNIST_train_data`,
 and inside them you will find PNG image files.
 
 4. `demo-MNIST-maxout.bat` in the root folder will start training the network.

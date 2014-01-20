@@ -21,7 +21,9 @@ git clone https://github.com/kensak/CharRecog.git
 2. [THE MNIST DATABASE of handwritten digits のサイト](http://yann.lecun.com/exdb/mnist/)
 から 4 つのデータファイルをダウンロードし、解凍してから `data\MNIST` フォルダーに置きます。
 
-3. 同じフォルダーにある `run.bat` を実行すると、`MNIST_test_data` と `MNIST_train_data` というフォルダーができ、
+3. 同じフォルダーにある `run.bat` か、あるいは `extract_images_MNIST.py`
+(Python と PIL ライブラリが必要) を実行すると、
+`MNIST_test_data` と `MNIST_train_data` というフォルダーができ、
 png 形式の文字画像が書き込まれます。
 
 4. ルートにある `demo-MNIST-maxout.bat` を実行すると学習が始まります。
