@@ -20,38 +20,26 @@
 
 static GPU_info_type global_GPU_info;
 
-// For each row in mask, 'dropoutRatio' by ratio of columns shall be set to zero.
-static void makeDropoutMask(cv::Mat &mask, const real &dropoutRatio, cv::RNG &rng)
+static void printMat(const cv::Mat &m)
 {
-  const int numSamples = mask.rows;
-  const int sampleSize = mask.cols;
-  const int threshold = (int)(sampleSize * dropoutRatio);
+  if (m.type() != CV_8U && m.type() != CV_32F && m.type() != CV_64F && m.type() != CV_32S)
+    return;
 
-  mask = 1;
-
-  for (int s = 0; s < numSamples; ++s)
+  for (int y = 0; y < m.rows; ++y)
   {
-    cv::Mat aRow(1, sampleSize, mask.type(), mask.ptr(s));
-    int count = 0;
-    while (count < threshold)
+    for (int x = 0; x < m.cols; ++x)
     {
-      unsigned int idx = (unsigned int)rng % (unsigned int)sampleSize;
-      if (aRow.at<unsigned char>(idx) == 0)
-        continue;
-      aRow.at<unsigned char>(idx) = 0;
-      ++count;
+      if (m.type() == CV_8U)
+        printf("%d ", m.at<unsigned char>(y, x));
+      else if (m.type() == CV_32F)
+        printf("%f ", m.at<float>(y, x));
+      else if (m.type() == CV_64F)
+        printf("%lf ", m.at<double>(y, x));
+      else if (m.type() == CV_32S)
+        printf("%d ", m.at<int>(y, x));
     }
+    printf("\n");
   }
-}
-
-// For each sample (=row) in the input, 'dropoutRatio' by ratio of columns shall be set to zero.
-static void Dropout(cv::Mat &inputs, cv::Mat &dropped, const real &dropoutRatio)
-{
-  cv::Mat mask(inputs.size(), CV_8U);
-	cv::RNG rng(time(NULL));
-  makeDropoutMask(mask, dropoutRatio, rng);
-
-  inputs.copyTo(dropped, mask);
 }
 
 // element wise multiplication : B_i *= A_i for all i.
@@ -224,26 +212,6 @@ static void elemMul(
 }
 */
 
-static void printMat(const cv::Mat &m)
-{
-  if (m.type() != CV_32F && m.type() != CV_64F && m.type() != CV_32S)
-    return;
-
-  for (int y = 0; y < m.rows; ++y)
-  {
-    for (int x = 0; x < m.cols; ++x)
-    {
-      if (m.type() == CV_32F)
-        printf("%f ", m.at<float>(y, x));
-      else if (m.type() == CV_64F)
-        printf("%lf ", m.at<double>(y, x));
-      else if (m.type() == CV_32S)
-        printf("%d ", m.at<int>(y, x));
-    }
-    printf("\n");
-  }
-}
-
 static void matMul(
   const cv::Mat &src1,
   const cv::Mat &src2,
@@ -369,14 +337,15 @@ void NNLayer::logSettings() const
     Log("Tanh perceptron layer : %d -> %d, dropout ratio = %f\n", inSize, outSize, (float)dropoutRatio);
     break;
   case linearPerceptron:
-    Log("Linear perceptron layer : %d -> %d, dropout ratio = %f, max weight norm = %f\n", inSize, outSize, (float)dropoutRatio, (float)maxWeightNorm);
+    Log("Linear perceptron layer : %d -> %d, dropout ratio = %f, max weight norm = %f\n",
+      inSize, outSize, (float)dropoutRatio, (float)maxWeightNorm);
     break;
   case convolution:
-    Log("Convolution layer : %d@%dx%d -> %d@%dx%d (filter %dx%d)\n",
+    Log("Convolution layer : %d@%dx%d -> %d@%dx%d (filter %dx%d), dropout ratio = %f\n",
       numInMaps, inMapSize.at<int>(0), inMapSize.at<int>(1),
       numOutMaps, outMapSize.at<int>(0), outMapSize.at<int>(1),
-      filterSize.at<int>(0), filterSize.at<int>(1)
-      );
+      filterSize.at<int>(0), filterSize.at<int>(1),
+      (float)dropoutRatio);
     break;
   case maxPool:
     Log("Maxpool layer : filter %dx%d\n", filterSize.at<int>(0), filterSize.at<int>(1));
@@ -399,7 +368,11 @@ void NNLayer::createPerceptronLayer(const int inSize_, const int outSize_, const
   bias.create(1, outSize, CV_REAL);
 }
 
-void NNLayer::createLinearPerceptronLayer(const int inSize_, const int outSize_, const real dropoutRatio_, const real maxWeightNorm_)
+void NNLayer::createLinearPerceptronLayer(
+  const int inSize_,
+  const int outSize_,
+  const real dropoutRatio_,
+  const real maxWeightNorm_)
 {
   type = linearPerceptron;
   inSize = inSize_;
@@ -422,7 +395,8 @@ void NNLayer::createConvolutionLayer(
   const cv::Mat inMapSize_,   // e.g. {13, 13} for input feature maps of size HxW=13x13
   const cv::Mat filterSize_,  // e.g. {5, 5} for HxW=5x5 filters.
   const int numInMaps_,       // number of input feature maps
-  const int numOutMaps_       // number of putput feature maps
+  const int numOutMaps_,      // number of putput feature maps
+  const real dropoutRatio_
   )
 {
   type = convolution;
@@ -431,6 +405,7 @@ void NNLayer::createConvolutionLayer(
   outMapSize = inMapSize - filterSize + 1;
   numInMaps = numInMaps_;
   numOutMaps = numOutMaps_;
+  dropoutRatio = dropoutRatio_;
 
   // weight is <numOutMaps>x<numInMaps>x<filter_H>x<filter_W> matrix.
   // e.g. when numOutMaps=40, numInMaps=20 and filterSize=5x5,
@@ -441,12 +416,10 @@ void NNLayer::createConvolutionLayer(
 }
 
 void NNLayer::createMaxPoolLayer(
-  //const cv::Mat inSizes_,     // e.g. {20, 26, 26} for 20 maps of size HxW=26x26
   const cv::Mat filterSize_  // e.g. {2, 2} for HxW=2x2 filters. 
   )
 {
   type = maxPool;
-  //inSizes = inSizes_;
   filterSize = filterSize_;
 }
 
@@ -607,42 +580,50 @@ void NNLayer::activateSoftMax(const cv::Mat &y_)
   //printMat(activation);
 }
 
-void NNLayer::forwardPropagate(const cv::Mat* &pX, const bool dropout)
+// get a random permutation of [0, 1, ..., len-1] where len = vec.size().
+static void GetRandomPermutation(std::vector<unsigned int> &vec, cv::RNG &rng)
 {
-  if (type == perceptron)
+  // Knuth shuffles algorithm
+  const size_t len = vec.size();
+  for (unsigned int i = 0; i < len; ++i)
   {
-    const int numSamples = pX->size[0];
-    const int x_cols = (int)(pX->total()) / pX->size[0];
-    CV_Assert(x_cols == inSize);
-
-    cv::Mat x;
-    x = cv::Mat(numSamples, x_cols, CV_REAL, pX->data);
-    pX = &x;
-
-    cv::Mat dropped;
-    if (dropout && dropoutRatio != (real)0)
-    {
-      Dropout(x, dropped, dropoutRatio);
-      pX = &dropped;
-    }
-
-    cv::Mat y(numSamples, outSize, CV_REAL);
-    // y <- x * weight
-    //std::cout << "*pX : " << pX->row(0) << std::endl;
-    //std::cout << "weight : " << weight << std::endl;
-    matMul(*pX, weight, (dropout? 1 : (1 - dropoutRatio)), y);
-    //std::cout << "y : " << y.row(0) << std::endl;
-
-    // activation += bias
-    for (int r = 0; r < numSamples; ++r)
-      y.row(r) += bias;
-
-    // calculate df and activation, i.e.,
-    // df <- f'(y),
-    // activation <- f(y).
-    activateTanh(y);
+    unsigned int j = rng.uniform(0, i + 1);
+    vec[i] = vec[j];
+    vec[j] = i;
   }
-  else if (type == linearPerceptron)
+}
+
+// For each row in mask, 'dropoutRatio' by ratio of columns shall be set to zero.
+static void makeDropoutMask(cv::Mat &mask, const real &dropoutRatio, cv::RNG &rng)
+{
+  const int numSamples = mask.size[0];
+  const int sampleSize = (int)mask.total() / numSamples;
+  std::vector<unsigned int> vec(sampleSize);
+
+  for (int s = 0; s < numSamples; ++s)
+  {
+    GetRandomPermutation(vec, rng);
+    cv::Mat randPermu(1, sampleSize, CV_32S, &vec[0]);
+    cv::Mat aRow(1, sampleSize, mask.type(), mask.ptr(s));
+    aRow = (randPermu >= (unsigned int)(sampleSize * dropoutRatio));
+  }
+}
+
+// For each sample (=row) in the input, 'dropoutRatio' by ratio of columns shall be set to zero.
+static void Dropout(const cv::Mat &inputs, cv::Mat &dropped, const real &dropoutRatio)
+{
+  //cv::Mat mask(inputs.size(), CV_8U);
+  cv::Mat mask(inputs.dims, inputs.size, CV_8U);
+	cv::RNG rng(time(NULL));
+  makeDropoutMask(mask, dropoutRatio, rng);
+
+  dropped = 0;
+  inputs.copyTo(dropped, mask);
+}
+
+void NNLayer::forwardPropagate(const cv::Mat* &pX, const bool dropout, const bool copyBackDropout)
+{
+  if (type == perceptron || type == linearPerceptron)
   {
     const int numSamples = pX->size[0];
     const int x_cols = (int)(pX->total()) / pX->size[0];
@@ -653,23 +634,49 @@ void NNLayer::forwardPropagate(const cv::Mat* &pX, const bool dropout)
     pX = &x;
 
     cv::Mat dropped;
-    if (dropout && dropoutRatio != (real)0)
+    if (dropoutRatio != 0)
     {
-      Dropout(x, dropped, dropoutRatio);
+      if (dropout)
+        Dropout(x, dropped, dropoutRatio);
+      else
+        dropped = x * (1 - dropoutRatio);
       pX = &dropped;
+      if (copyBackDropout)
+        dropped.copyTo(x);
     }
 
-    // activation <- x * weight
-    //std::cout << std::endl << "forwardPropagate(): *pX : " << *pX << std::endl;
-    //std::cout << std::endl << "forwardPropagate(): weight : " << weight << std::endl;
-    matMul(*pX, weight, 1, activation);
-    //std::cout << std::endl << "forwardPropagate(): activation after matMul: " << activation << std::endl;
+    if (type == perceptron)
+    {
+      cv::Mat y(numSamples, outSize, CV_REAL);
+      // y <- x * weight
+      //std::cout << "*pX : " << pX->row(0) << std::endl;
+      //std::cout << "weight : " << weight << std::endl;
+      matMul(*pX, weight, 1, y);
+      //std::cout << "y : " << y.row(0) << std::endl;
 
-    // activation += bias
-    for (int r = 0; r < numSamples; ++r)
-      activation.row(r) += bias;
+      // activation += bias
+      for (int r = 0; r < numSamples; ++r)
+        y.row(r) += bias;
 
-    //std::cout << std::endl << "forwardPropagate(): activation after adding bias : " << activation << std::endl;
+      // calculate df and activation, i.e.,
+      // df <- f'(y),
+      // activation <- f(y).
+      activateTanh(y);
+    }
+    else if (type == linearPerceptron)
+    {
+      // activation <- x * weight
+      //std::cout << std::endl << "forwardPropagate(): *pX : " << *pX << std::endl;
+      //std::cout << std::endl << "forwardPropagate(): weight : " << weight << std::endl;
+      matMul(*pX, weight, (dropout? 1 : (1 - dropoutRatio)), activation);
+      //std::cout << std::endl << "forwardPropagate(): activation after matMul: " << activation << std::endl;
+
+      // activation += bias
+      for (int r = 0; r < numSamples; ++r)
+        activation.row(r) += bias;
+
+      //std::cout << std::endl << "forwardPropagate(): activation after adding bias : " << activation << std::endl;
+    }
   }
   else if (type == softMax)
   {
@@ -758,6 +765,7 @@ void NNLayer::forwardPropagate(const cv::Mat* &pX, const bool dropout)
       CV_Assert(pX->size[1] == numInMaps);
       CV_Assert(pX->size[2] == inMapSize.at<int>(0));
       CV_Assert(pX->size[3] == inMapSize.at<int>(1));
+      x = *pX;
     }
     else
     {
@@ -772,6 +780,18 @@ void NNLayer::forwardPropagate(const cv::Mat* &pX, const bool dropout)
     }
 
     // Now, *pX is <num samples>x<numInMaps>x<in_H>x<in_W> matrix.
+
+    cv::Mat dropped;
+    if (dropoutRatio != 0)
+    {
+      if (dropout)
+        Dropout(x, dropped, dropoutRatio);
+      else
+        dropped = x * (1 - dropoutRatio);
+      pX = &dropped;
+      if (copyBackDropout)
+        dropped.copyTo(x);
+    }
 
     // y is <num samples>x<numOutMaps>x<out_H>x<out_W> matrix
     cv::Mat matSize = (cv::Mat_<int>(1, 4) << numSamples, numOutMaps, outMapSize.at<int>(0), outMapSize.at<int>(1));
@@ -804,6 +824,8 @@ void NNLayer::forwardPropagate(const cv::Mat* &pX, const bool dropout)
           cv::Ptr<cv::FilterEngine> pEngine = createLinearFilter(CV_REAL, CV_REAL, weightSub);
           cv::Mat dst(in_H, in_W, CV_REAL);
           pEngine->apply(inImage, dst);
+          if (!dropout && dropoutRatio != 0)
+            dst *= (1 - dropoutRatio);
           outImage += dst(cv::Rect((filter_W - 1) / 2, (filter_H - 1) / 2, out_W, out_H));
         }
       }
@@ -940,6 +962,7 @@ void NNLayer::writeBinary(FILE *fp) const
     fwrite(filterSize.data, sizeof(int), 2, fp);
     fwrite(&numInMaps, sizeof(numInMaps), 1, fp);
     fwrite(&numOutMaps, sizeof(numOutMaps), 1, fp);
+    fwrite(&dropoutRatio, sizeof(dropoutRatio), 1, fp);
 
     // weight is <numOutMaps>x<numInMaps>x<filter_H>x<filter_W> matrix.
     fwrite(weight.data, sizeof(real), weight.total(), fp);
@@ -985,6 +1008,7 @@ void NNLayer::readBinary(FILE *fp)
     outMapSize = inMapSize - filterSize + 1;
     fread(&numInMaps, sizeof(int), 1, fp);
     fread(&numOutMaps, sizeof(int), 1, fp);
+    fread(&dropoutRatio, sizeof(dropoutRatio), 1, fp);
 
     // weight is <numOutMaps>x<numInMaps>x<filter_H>x<filter_W> matrix.
     cv::Mat weightSize = (cv::Mat_<int>(1, 4) << numOutMaps, numInMaps, filterSize.at<int>(0), filterSize.at<int>(1));
@@ -1112,10 +1136,13 @@ int NeuralNet::constructLayers(const std::string &layerParamStr)
     	if (!getline(seg, token, ','))
         return 1;
       int numOutMaps = atoi(token.c_str());
+      real dropoutRatio = 0;
+    	if (getline(seg, token, ','))
+        dropoutRatio = (real)atof(token.c_str());
       layers[currentLayer++].createConvolutionLayer(
         (cv::Mat_<_int32>(1,2) << inMapH, inMapW),
         (cv::Mat_<_int32>(1,2) << filterH, filterW),
-        numInMaps, numOutMaps);
+        numInMaps, numOutMaps, dropoutRatio);
     }
     else if (token == "M") // maxpool layer
     {
@@ -1461,6 +1488,7 @@ int NeuralNet::train_sub(
   const cv::Mat &sampleWeights,
   const int firstLayerToTrain,
   const updateParam &update_param,
+  cv::Mat &diffFromTarget,
   real &E    // in, out : the first time this func is called, E should be 0.
   )
 {
@@ -1495,33 +1523,27 @@ int NeuralNet::train_sub(
   }
 
   // forward pass
-  
   //Log("forward propagation\n");
 
-  const cv::Mat *pX;
-  if (E == 0) // the first time
+  const cv::Mat *pX = &inputs;
+  if (E == 0) // the first time !!!minibatchにも対応が必要!!!
   {
-    // go through all layers
-    pX = &inputs;
-    for (int i = 0; i < numLayers(); ++i)
+    // forward propagate on layer 0 ... firstLayerToTrain - 1
+    for (int i = 0; i < firstLayerToTrain; ++i)
     {
       //printf("layer %d (type %d)\n", i, layers[i].type);
-      layers[i].forwardPropagate(pX, true);
+      layers[i].forwardPropagate(pX, false, false);
     }
   }
-  else
-  {
-    // recalculate only layer[firstLayerToTrain] and upward
-    if (firstLayerToTrain == 0)
-      pX = &inputs;
-    else
-      pX = &(layers[firstLayerToTrain - 1].activation);
 
-    for (int i = firstLayerToTrain; i < numLayers(); ++i)
-    {
-      //printf("layer %d (type %d)\n", i, layers[i].type);
-      layers[i].forwardPropagate(pX, true);
-    }
+  // forward propagate on layer firstLayerToTrain ... maxLayer
+  if (firstLayerToTrain > 0)
+    pX = &(layers[firstLayerToTrain - 1].activation);
+
+  for (int i = firstLayerToTrain; i < numLayers(); ++i)
+  {
+    //printf("layer %d (type %d)\n", i, layers[i].type);
+    layers[i].forwardPropagate(pX, true, true);  
   }
 
   // prepare for backward pass
@@ -1533,13 +1555,14 @@ int NeuralNet::train_sub(
   
   // set first grad
   cv::Mat firstGrad = layers[numLayers() - 1].grad; // just an alias
-  //!!!!!!!!!!!
+  //-----------------------------------------------------------
   // firstGrad = layers[numLayers() - 1].activation - outputs;
   // としてはいけない。firstGrad.data がつけ変わってしまう。
-  //!!!!!!!!!!!
+  //-----------------------------------------------------------
   //std::cout << std::endl << "layers[numLayers() - 1].activation : " << layers[numLayers() - 1].activation << std::endl;
   layers[numLayers() - 1].activation.copyTo(firstGrad);
   firstGrad -= outputs;
+  firstGrad.copyTo(diffFromTarget);
 
   //std::cout << "activ_0 : " << layers[numLayers() - 1].activation.row(0) << std::endl;
   //std::cout << "outputs_0 : " << outputs.row(0) << std::endl;
@@ -1837,6 +1860,56 @@ int NeuralNet::train_sub(
   return 0;
 }
 
+static void ChooseSamples(
+  const cv::Mat &inMat,
+  cv::Mat &outMat,
+  const int sampleHead,
+  const int minibatchSize,
+  const std::vector<unsigned int> &permutation,
+  const bool cyclic = true)
+{
+  const int numSamples = inMat.size[0];
+  int numOutRows;
+
+  if (cyclic)
+  {
+    numOutRows = minibatchSize;
+    outMat.create(minibatchSize, (int)inMat.total() / numSamples, inMat.type());
+  }
+  else
+  {
+    numOutRows = (sampleHead + minibatchSize < numSamples)? minibatchSize : (numSamples - sampleHead);
+    outMat.create(numOutRows, (int)inMat.total() / numSamples, inMat.type());
+  }
+
+  for (int i = 0; i < numOutRows; ++i)
+  {
+    unsigned int index = permutation[(sampleHead + i) % numSamples];
+    inMat.row(index).copyTo(outMat.row(i));
+  }
+}
+
+static void AdjustSampleWeights(cv::Mat &sampleWeights, const cv::Mat &firstGrad)
+{
+  CV_Assert(sampleWeights.rows == firstGrad.rows);
+
+  cv::Mat rowMax, rowMin, coef;
+  cv::reduce(firstGrad, rowMax, 1, CV_REDUCE_MAX);
+  cv::reduce(firstGrad, rowMin, 1, CV_REDUCE_MIN);
+
+#if 0
+  cv::log(rowMin - rowMax + 2, coef);
+  coef = 1 - (coef / log(2.0));
+#else
+  const real a = 10;
+  cv::exp(-a * (rowMin - rowMax + 1), coef);
+#endif
+
+  //std::cout << "coef: " << coef.rowRange(0, 100) << std::endl;
+
+  elemMul(coef, sampleWeights);
+}
+
 int NeuralNet::train(
   const cv::Mat &inputs,         // [num samples] x [input vector size] matrix
   void (*TransformSamples)(cv::Mat &inputs, void *transformSamplesInfo), // callback function for transforming input data
@@ -1848,6 +1921,8 @@ int NeuralNet::train(
   const int maxIter,
   const int evaluateEvery,
   void (*funcToEvaluateEvery)(NeuralNet &nn), // callback function to be called every 'evaluateEvery' epochs
+  const bool initializeLearningState,
+  const int minibatchSize,
   real &E                        // out : error.
   )
 {
@@ -1859,56 +1934,68 @@ int NeuralNet::train(
   cv::reduce(sampleWeights, sumMat, 0, CV_REDUCE_SUM);  // sum up the only column
   sampleWeights /= sumMat.at<real>(0, 0);
 
-  //std::vector<NNLayer> &layers = *pLayers;
   const int numLayers = NeuralNet::numLayers();
   const int numSamples = inputs.rows;
+  const int batchSize = (minibatchSize == 0)? numSamples : minibatchSize;
   for (int i = 0; i < numLayers; ++i)
   {
     if (
       layers[i].type == NNLayer::perceptron ||
       layers[i].type == NNLayer::linearPerceptron)
     {
-      layers[i].activation.create(numSamples, layers[i].outSize, CV_REAL);
+      layers[i].activation.create(batchSize, layers[i].outSize, CV_REAL);
       if (layers[i].activation.data == 0)
         return 1;
       if (layers[i].type == NNLayer::perceptron)
       {
-        layers[i].df.create(numSamples, layers[i].outSize, CV_REAL);
+        layers[i].df.create(batchSize, layers[i].outSize, CV_REAL);
         if (layers[i].df.data == 0)
           return 2;
       }
-      layers[i].grad.create(numSamples, layers[i].outSize, CV_REAL);
+      layers[i].grad.create(batchSize, layers[i].outSize, CV_REAL);
       if (layers[i].grad.data == 0)
         return 3;
 
       if (update_param.type == updateParam::rprop)
       {
-        //if (layers[i].dw.data == NULL)
-        //{
-          layers[i].dw.create(layers[i].inSize, layers[i].outSize, CV_REAL);
+        bool doInitialize = false;
+        if (layers[i].dw.data == NULL || initializeLearningState)
+          doInitialize = true;
+
+        layers[i].dw.create(layers[i].inSize, layers[i].outSize, CV_REAL);
+        layers[i].dwSign.create(layers[i].inSize, layers[i].outSize, CV_32S);
+        layers[i].db.create(1, layers[i].outSize, CV_REAL);
+        layers[i].dbSign.create(1, layers[i].outSize, CV_32S);
+
+        if (doInitialize)
+        {
           layers[i].dw = update_param.dw0;
-          layers[i].dwSign.create(layers[i].inSize, layers[i].outSize, CV_32S);
           layers[i].dwSign = 0;
-          layers[i].db.create(1, layers[i].outSize, CV_REAL);
           layers[i].db = update_param.dw0;
-          layers[i].dbSign.create(1, layers[i].outSize, CV_32S);
           layers[i].dbSign = 0;
-        //}
+        }
       }
       else if (update_param.type == updateParam::bprop)
       {
+        bool doInitialize = false;
+        if (layers[i].last_dW.data == NULL || initializeLearningState)
+          doInitialize = true;
+
         layers[i].last_dW.create(layers[i].inSize, layers[i].outSize, CV_REAL);
-        layers[i].last_dW = 0;
         layers[i].last_db.create(1, layers[i].outSize, CV_REAL);
-        layers[i].last_db = 0;
+        if (doInitialize)
+        {
+          layers[i].last_dW = 0;
+          layers[i].last_db = 0;
+        }
       }
     }
     else if (layers[i].type == NNLayer::softMax)
     {
-      layers[i].activation.create(numSamples, layers[i].outSize, CV_REAL);
+      layers[i].activation.create(batchSize, layers[i].outSize, CV_REAL);
       if (layers[i].activation.data == 0)
         return 4;
-      layers[i].grad.create(numSamples, layers[i].outSize, CV_REAL);
+      layers[i].grad.create(batchSize, layers[i].outSize, CV_REAL);
       if (layers[i].grad.data == 0)
         return 5;
     }
@@ -1924,7 +2011,7 @@ int NeuralNet::train(
       }
 
       // activation, df, grad are <num samples>x<numOutMaps>x<out_H>x<out_W> matrix.
-      cv::Mat matSize = (cv::Mat_<int>(1, 4) << numSamples, layers[i].numOutMaps, layers[i].outMapSize.at<int>(0), layers[i].outMapSize.at<int>(1));
+      cv::Mat matSize = (cv::Mat_<int>(1, 4) << batchSize, layers[i].numOutMaps, layers[i].outMapSize.at<int>(0), layers[i].outMapSize.at<int>(1));
       layers[i].activation.create(4, (int *)matSize.data, CV_REAL);
       if (layers[i].activation.data == 0)
         return 8;
@@ -1940,27 +2027,40 @@ int NeuralNet::train(
       cv::Mat weightSize = (cv::Mat_<int>(1, 4) << layers[i].numOutMaps, layers[i].numInMaps, layers[i].filterSize.at<int>(0), layers[i].filterSize.at<int>(1));
       if (update_param.type == updateParam::rprop)
       {
-        //if (layers[i].dw.data == NULL)
-        //{
-          // dw and dwSign are <numOutMaps>x<numInMaps>x<filter_H>x<filter_W> matrix.
-          layers[i].dw.create(4, (int *)(weightSize.data), CV_REAL);
-          layers[i].dw = update_param.dw0;
-          layers[i].dwSign.create(4, (int *)(weightSize.data), CV_32S);
-          layers[i].dwSign = 0;
+        bool doInitialize = false;
+        if (layers[i].dw.data == NULL || initializeLearningState)
+          doInitialize = true;
 
-          // db and dbSign are 1x<numOutMaps> matrix.
-          layers[i].db.create(1, layers[i].numOutMaps, CV_REAL);
+        // dw and dwSign are <numOutMaps>x<numInMaps>x<filter_H>x<filter_W> matrix.
+        layers[i].dw.create(4, (int *)(weightSize.data), CV_REAL);
+        layers[i].dwSign.create(4, (int *)(weightSize.data), CV_32S);
+
+        // db and dbSign are 1x<numOutMaps> matrix.
+        layers[i].db.create(1, layers[i].numOutMaps, CV_REAL);
+        layers[i].dbSign.create(1, layers[i].numOutMaps, CV_32S);
+
+        if (doInitialize)
+        {
+          layers[i].dw = update_param.dw0;
+          layers[i].dwSign = 0;
           layers[i].db = update_param.dw0;
-          layers[i].dbSign.create(1, layers[i].numOutMaps, CV_32S);
           layers[i].dbSign = 0;
-        //}
+        }
       }
       else if (update_param.type == updateParam::bprop)
       {
+        bool doInitialize = false;
+        if (layers[i].last_dW.data == NULL || initializeLearningState)
+          doInitialize = true;
+
         layers[i].last_dW.create(4, (int *)(weightSize.data), CV_REAL);
-        layers[i].last_dW = 0;
         layers[i].last_db.create(1, layers[i].numOutMaps, CV_REAL);
-        layers[i].last_db = 0;
+
+        if (doInitialize)
+        {
+          layers[i].last_dW = 0;
+          layers[i].last_db = 0;
+        }
       }
     }
     else if (layers[i].type == NNLayer::maxPool)
@@ -1974,7 +2074,7 @@ int NeuralNet::train(
       }
 
       // activation, df and grad are <num samples>x<numOutMaps>x<out_H>x<out_W> matrix.
-      cv::Mat matSize = (cv::Mat_<int>(1, 4) << numSamples, layers[i].numOutMaps, layers[i].outMapSize.at<int>(0), layers[i].outMapSize.at<int>(1));
+      cv::Mat matSize = (cv::Mat_<int>(1, 4) << batchSize, layers[i].numOutMaps, layers[i].outMapSize.at<int>(0), layers[i].outMapSize.at<int>(1));
       layers[i].activation.create(4, (int *)matSize.data, CV_REAL);
       // df has a different meaning for maxPool.
       // maxPool has no activation function. It outputs just the max of input values
@@ -1990,18 +2090,40 @@ int NeuralNet::train(
     }
   }
 
+  std::vector<unsigned int> permutation(numSamples);
+	cv::RNG rng(time(NULL));
+  GetRandomPermutation(permutation, rng);
+
   E = 0;
-  cv::Mat inputs1 = inputs;
+  cv::Mat inputs1;
+  cv::Mat sampleWeights1;
+  cv::Mat diffFromTarget(numSamples, 1, CV_REAL);
+  cv::Mat outputs1 = outputs;
+  int sampleHead = 0; // the index of the first sample in the current minibatch
   for (int iter = 0; iter < maxIter; ++iter)
   {
-    if (TransformSamples != NULL)
+    if (minibatchSize != 0)
+    {
+      ChooseSamples(inputs, inputs1, sampleHead, minibatchSize, permutation);
+      ChooseSamples(outputs, outputs1, sampleHead, minibatchSize, permutation);
+      ChooseSamples(sampleWeights, sampleWeights1, sampleHead, minibatchSize, permutation);
+      sampleHead = (sampleHead + minibatchSize) % numSamples;
+    }
+    else
     {
       inputs1 = inputs.clone();
-
-      (*TransformSamples)(inputs1, transformSamplesInfo);
+      sampleWeights1 = sampleWeights;
+      
+      // predict に失敗したサンプルについて sampleWeights を重くする。
+      //sampleWeights1 = sampleWeights.clone();
+      //if (iter != 0)
+      //  AdjustSampleWeights(sampleWeights1, diffFromTarget);
     }
 
-    int ret = train_sub(inputs1, outputs, sampleWeights, firstLayerToTrain, update_param, E);
+    if (TransformSamples != NULL && iter != 0)
+      (*TransformSamples)(inputs1, transformSamplesInfo);
+
+    int ret = train_sub(inputs1, outputs1, sampleWeights1, firstLayerToTrain, update_param, diffFromTarget, E);
     if (ret != 0)
       return (ret + 100);
 
@@ -2014,18 +2136,12 @@ int NeuralNet::train(
       if (update_param.learningRate < update_param.finalLearningRate)
         update_param.learningRate = update_param.finalLearningRate;
 
-      if (iter < update_param.momentumDecayEpoch)
-        update_param.momentum = ((real)iter / update_param.momentumDecayEpoch) * update_param.finalMomentum +
-          (1 - (real)iter / update_param.momentumDecayEpoch) * update_param.initMomentum;
-      else
+      update_param.momentum += update_param.momentumDelta;
+      if (update_param.momentum > update_param.finalMomentum)
         update_param.momentum = update_param.finalMomentum;
     }
     else if (update_param.type == updateParam::rprop)
     {
-      int ret = train_sub(inputs1, outputs, sampleWeights, firstLayerToTrain, update_param, E);
-      if (ret != 0)
-        return (ret + 200);
-
       printf("%d. E = %f\n", iter, E);
       Log("%d. E = %f\n", iter, E);
     }
@@ -2047,12 +2163,15 @@ int NeuralNet::train(
 int NeuralNet::autoencode_one_layer(
   const int layerNum,
   const cv::Mat &inputs0,         // [num samples] x [input vector size] matrix
-  const cv::Mat &sampleWeights,   // column vector of size [num samples]
+  const cv::Mat &sampleWeights0,  // column vector of size [num samples]
   const updateParam &update_param_,
   const int maxIter,
+  const int minibatchSize,
   real &E                         // out : error.
   )
 {
+  const bool initializeLearningState = true;
+
   // Copy so that values can be changed.
   updateParam update_param = update_param_;
 
@@ -2060,6 +2179,8 @@ int NeuralNet::autoencode_one_layer(
 	cv::RNG rng(time(NULL));
 
   const int numSamples = inputs0.size[0];
+  const int batchSize = (minibatchSize == 0)? numSamples : minibatchSize;
+
   const int in_H = (layer.type == NNLayer::convolution)? layer.inMapSize.at<int>(0) : 0;
   const int in_W = (layer.type == NNLayer::convolution)? layer.inMapSize.at<int>(1) : 0;
   const int out_H = (layer.type == NNLayer::convolution)? layer.outMapSize.at<int>(0) : 0;
@@ -2098,34 +2219,59 @@ int NeuralNet::autoencode_one_layer(
 
   if (layer.type == NNLayer::perceptron || layer.type == NNLayer::linearPerceptron)
   {
-    layer.activation.create(numSamples, layer.outSize, CV_REAL);
+    layer.activation.create(batchSize, layer.outSize, CV_REAL);
     if (layer.activation.data == 0)
       return 1;
     if (layer.type == NNLayer::perceptron)
     {
-      layer.df.create(numSamples, layer.outSize, CV_REAL);
+      layer.df.create(batchSize, layer.outSize, CV_REAL);
       if (layer.df.data == 0)
         return 2;
     }
-    layer.grad.create(numSamples, layer.outSize, CV_REAL);
+    layer.grad.create(batchSize, layer.outSize, CV_REAL);
     if (layer.grad.data == 0)
       return 3;
 
-    // for rprop
-    layer.dw.create(layer.inSize, layer.outSize, CV_REAL);
-    layer.dw = update_param.dw0;
-    layer.dwSign.create(layer.inSize, layer.outSize, CV_32S);
-    layer.dwSign = 0;
-    layer.db.create(1, layer.outSize, CV_REAL);
-    layer.db = update_param.dw0;
-    layer.dbSign.create(1, layer.outSize, CV_32S);
-    layer.dbSign = 0;
+    if (update_param.type == updateParam::rprop)
+    {
+      bool doInitialize = false;
+      if (layer.dw.data == NULL || initializeLearningState)
+        doInitialize = true;
 
-    y2 = cv::Mat(numSamples, layer.inSize, CV_REAL);
+      layer.dw.create(layer.inSize, layer.outSize, CV_REAL);
+      layer.dwSign.create(layer.inSize, layer.outSize, CV_32S);
+      layer.db.create(1, layer.outSize, CV_REAL);
+      layer.dbSign.create(1, layer.outSize, CV_32S);
+
+      if (doInitialize)
+      {
+        layer.dw = update_param.dw0;
+        layer.dwSign = 0;
+        layer.db = update_param.dw0;
+        layer.dbSign = 0;
+      }
+    }
+    else if (update_param.type == updateParam::bprop)
+    {
+      bool doInitialize = false;
+      if (layer.last_dW.data == NULL || initializeLearningState)
+        doInitialize = true;
+
+      layer.last_dW.create(layer.inSize, layer.outSize, CV_REAL);
+      layer.last_db.create(1, layer.outSize, CV_REAL);
+
+      if (doInitialize)
+      {
+        layer.last_dW = 0;
+        layer.last_db = 0;
+      }
+    }
+
+    y2 = cv::Mat(batchSize, layer.inSize, CV_REAL);
     bias2 = cv::Mat(1, layer.inSize, CV_REAL, cv::Scalar::all(0));
-    activation2 = cv::Mat(numSamples, layer.inSize, CV_REAL);
+    activation2 = cv::Mat(batchSize, layer.inSize, CV_REAL);
     if (layer.type == NNLayer::perceptron)
-      df2 = cv::Mat(numSamples, layer.inSize, CV_REAL);
+      df2 = cv::Mat(batchSize, layer.inSize, CV_REAL);
     db2 = cv::Mat(1, layer.inSize, CV_REAL, cv::Scalar::all(update_param.dw0));
     dbSign2 = cv::Mat(1, layer.inSize, CV_32S, cv::Scalar::all(0));
   }
@@ -2133,7 +2279,7 @@ int NeuralNet::autoencode_one_layer(
   else if (layer.type == NNLayer::convolution)
   {
     // activation, df, grad are <num samples>x<numOutMaps>x<out_H>x<out_W> matrix.
-    cv::Mat matSize = (cv::Mat_<int>(1, 4) << numSamples, layer.numOutMaps, out_H, out_W);
+    cv::Mat matSize = (cv::Mat_<int>(1, 4) << batchSize, layer.numOutMaps, out_H, out_W);
     layer.activation.create(4, (int *)matSize.data, CV_REAL);
     if (layer.activation.data == 0)
       return 5;
@@ -2161,7 +2307,7 @@ int NeuralNet::autoencode_one_layer(
     layer.dbSign = 0;
 
     // y2 holds the estimated value of x.
-    weightSize = (cv::Mat_<int>(1, 4) << numSamples, layer.numInMaps, in_H, in_W);
+    weightSize = (cv::Mat_<int>(1, 4) << batchSize, layer.numInMaps, in_H, in_W);
     y2 = cv::Mat(4, (int *)(weightSize.data), CV_REAL);
     bias2 = cv::Mat(1, layer.numInMaps, CV_REAL, cv::Scalar::all(0));
     activation2 = cv::Mat(4, (int *)(weightSize.data), CV_REAL);
@@ -2177,16 +2323,33 @@ int NeuralNet::autoencode_one_layer(
     return 8;
   }
 
+  std::vector<unsigned int> permutation(numSamples);
+  GetRandomPermutation(permutation, rng);
+
+  cv::Mat inputs_sub = inputs0;
+  cv::Mat sampleWeights_sub = sampleWeights0;
+  int sampleHead = 0; // the index of the first sample in the current minibatch
   for (int iter = 0; iter < maxIter; ++iter)
   {
-    cv::Mat inputs = inputs0.clone(); // copy data
+    if (minibatchSize != 0)
+    {
+      ChooseSamples(inputs0, inputs_sub, sampleHead, minibatchSize, permutation);
+      ChooseSamples(sampleWeights0, sampleWeights_sub, sampleHead, minibatchSize, permutation);
+      sampleHead = (sampleHead + minibatchSize) % numSamples;
+    }
+
+    cv::Mat dropped_inputs_sub = inputs_sub;
+    if (layer.dropoutRatio != 0)
+      dropped_inputs_sub = inputs_sub.clone();
 
     // forward path
 
     // set value of layer.df and layer.activation,
-    // applying dropout.
-    const cv::Mat *pX = &inputs;
-    layer.forwardPropagate(pX, true);
+    // applying Dropout.
+    //
+    // inputs can be modified by Dropout.
+    const cv::Mat *pX = &dropped_inputs_sub;
+    layer.forwardPropagate(pX, true, true);
 
     // compute
     //   y2 = layer.activation * W^T + bias2,
@@ -2207,7 +2370,7 @@ int NeuralNet::autoencode_one_layer(
 #if defined(_OPENMP) && defined(USE_OPENMP)
 #pragma omp parallel for
 #endif
-      for (int s = 0; s < numSamples; ++s)
+      for (int s = 0; s < batchSize; ++s)
       {
         for (int inMap = 0; inMap < layer.numInMaps; ++inMap)
         {
@@ -2235,7 +2398,7 @@ int NeuralNet::autoencode_one_layer(
     // y2 += bias2
     if (layer.type == NNLayer::perceptron || layer.type == NNLayer::linearPerceptron)
     {
-      for (int r = 0; r < numSamples; ++r)
+      for (int r = 0; r < batchSize; ++r)
         y2.row(r) += bias2;
     }
     else if (layer.type == NNLayer::convolution)
@@ -2243,7 +2406,7 @@ int NeuralNet::autoencode_one_layer(
 #if defined(_OPENMP) && defined(USE_OPENMP)
 #pragma omp parallel for
 #endif
-      for (int s = 0; s < numSamples; ++s)
+      for (int s = 0; s < batchSize; ++s)
       {
         for (int inMap = 0; inMap < layer.numInMaps; ++inMap)
         {
@@ -2280,24 +2443,24 @@ int NeuralNet::autoencode_one_layer(
     cv::Mat grad2;
     if (layer.type == NNLayer::perceptron || layer.type == NNLayer::linearPerceptron)
     {
-      if (inputs0.dims == 4)
+      if (inputs_sub.dims == 4)
       {
-        cv::Mat tmp(numSamples, (int)inputs0.total() / numSamples, CV_REAL, inputs0.data);
+        cv::Mat tmp(batchSize, (int)inputs_sub.total() / batchSize, CV_REAL, inputs_sub.data);
         grad2 = activation2 - tmp;
       }
       else
-        grad2 = activation2 - inputs0;
+        grad2 = activation2 - inputs_sub;
     }
     else if (layer.type == NNLayer::convolution)
     {
-      if (inputs0.dims == 4)
+      if (inputs_sub.dims == 4)
       {
-        grad2 = activation2 - inputs0;
+        grad2 = activation2 - inputs_sub;
       }
       else
       {
-        cv::Mat inMatSize = (cv::Mat_<int>(1, 4) << numSamples, layer.numInMaps, in_H, in_W);
-        cv::Mat tmp = cv::Mat(4, (int *)inMatSize.data, CV_REAL, inputs0.data);
+        cv::Mat inMatSize = (cv::Mat_<int>(1, 4) << batchSize, layer.numInMaps, in_H, in_W);
+        cv::Mat tmp = cv::Mat(4, (int *)inMatSize.data, CV_REAL, inputs_sub.data);
         grad2 = activation2 - tmp;
       }
     }
@@ -2310,12 +2473,12 @@ int NeuralNet::autoencode_one_layer(
 
     cv::Mat sq2;
     cv::reduce(sq, sq2, 1, CV_REDUCE_SUM);  // sum up each row
-    E = (real)sq2.dot(sampleWeights);
+    E = (real)sq2.dot(sampleWeights_sub);
 
-    for (int i = 0; i < numSamples; ++i)
+    for (int i = 0; i < batchSize; ++i)
     {
-      cv::Mat tmp(1, (int)grad2.total() / numSamples, grad2.type(), grad2.data + grad2.step[0] * i);
-      tmp *= ((real *)sampleWeights.data)[i];
+      cv::Mat tmp(1, (int)grad2.total() / batchSize, grad2.type(), grad2.data + grad2.step[0] * i);
+      tmp *= ((real *)sampleWeights_sub.data)[i];
     }
 
     // backward path : rprop
@@ -2345,7 +2508,7 @@ int NeuralNet::autoencode_one_layer(
 #if defined(_OPENMP) && defined(USE_OPENMP)
 #pragma omp parallel for
 #endif
-      for (int s = 0; s < numSamples; ++s)
+      for (int s = 0; s < batchSize; ++s)
       {
         for (int inMap = 0; inMap < layer.numInMaps; ++inMap)
         {
@@ -2380,7 +2543,7 @@ int NeuralNet::autoencode_one_layer(
 #if defined(_OPENMP) && defined(USE_OPENMP)
 #pragma omp parallel for
 #endif
-      for (int s = 0; s < numSamples; ++s)
+      for (int s = 0; s < batchSize; ++s)
       {
         for (int outMap = 0; outMap < layer.numOutMaps; ++outMap)
         {
@@ -2413,13 +2576,13 @@ int NeuralNet::autoencode_one_layer(
     cv::Mat dEdw;
     if (layer.type == NNLayer::perceptron || layer.type == NNLayer::linearPerceptron)
     {
-      if (inputs0.dims == 4)
+      if (inputs_sub.dims == 4)
       {
-        cv::Mat tmp(numSamples, (int)inputs.total() / numSamples, CV_REAL, inputs.data);
+        cv::Mat tmp(batchSize, (int)dropped_inputs_sub.total() / batchSize, CV_REAL, dropped_inputs_sub.data);
         matMul(tmp, layer.grad, 1, dEdw, CV_GEMM_A_T);
       }
       else
-        matMul(inputs, layer.grad, 1, dEdw, CV_GEMM_A_T);
+        matMul(dropped_inputs_sub, layer.grad, 1, dEdw, CV_GEMM_A_T);
     }
     else if (layer.type == NNLayer::convolution)
     {
@@ -2431,7 +2594,7 @@ int NeuralNet::autoencode_one_layer(
 #if defined(_OPENMP) && defined(USE_OPENMP)
 #pragma omp parallel for
 #endif
-      for (int s = 0; s < numSamples; ++s)
+      for (int s = 0; s < batchSize; ++s)
       {
         for (int outMap = 0; outMap < layer.numOutMaps; ++outMap)
         {
@@ -2440,7 +2603,7 @@ int NeuralNet::autoencode_one_layer(
           for (int inMap = 0; inMap < layer.numInMaps; ++inMap)
           {
             // interpret inputs as a <num samples>x<numInMaps>x<in_H>x<in_W> matrix.
-            cv::Mat inputs_(in_H, in_W, CV_REAL, inputs.data + inputs.step[0] * s + (in_H * in_W * sizeof(real)) * inMap);
+            cv::Mat inputs_(in_H, in_W, CV_REAL, dropped_inputs_sub.data + dropped_inputs_sub.step[0] * s + (in_H * in_W * sizeof(real)) * inMap);
             cv::Mat dEdw_(filter_H, filter_W, CV_REAL, dEdw.data + dEdw.step[0] * outMap + dEdw.step[1] * inMap);
 
             for (int y = 0; y < filter_H; ++y)
@@ -2492,14 +2655,23 @@ int NeuralNet::autoencode_one_layer(
       if (update_param.learningRate < update_param.finalLearningRate)
         update_param.learningRate = update_param.finalLearningRate;
 
-      if (iter < update_param.momentumDecayEpoch)
-        update_param.momentum = ((real)iter / update_param.momentumDecayEpoch) * update_param.finalMomentum +
-          (1 - (real)iter / update_param.momentumDecayEpoch) * update_param.initMomentum;
-      else
+      update_param.momentum += update_param.momentumDelta;
+      if (update_param.momentum > update_param.finalMomentum)
         update_param.momentum = update_param.finalMomentum;
 
       printf("%d. E = %f (learning rate=%f, momentum=%f)\n", iter, E, update_param.learningRate, update_param.momentum);
       Log("%d. E = %f (learning rate=%f, momentum=%f)\n", iter, E, update_param.learningRate, update_param.momentum);
+    }
+
+    if (layer.type == NNLayer::linearPerceptron && layer.maxWeightNorm != 0)
+    {
+      double weightNorm = cv::norm(layer.weight);
+      if (layer.maxWeightNorm < weightNorm)
+      {
+        double coef = layer.maxWeightNorm / weightNorm;
+        layer.weight *= coef;
+        layer.bias *= coef;
+      }
     }
 
     if (_access("stopLoop", 0) != -1)
@@ -2513,16 +2685,20 @@ int NeuralNet::autoencode_one_layer(
 }
 
 int NeuralNet::autoencode(
-  const cv::Mat &inputs_,        // [num samples] x [input vector size] matrix
-  const cv::Mat &sampleWeights,  // column vector of size [num samples]
+  const cv::Mat &inputs_,         // [num samples] x [input vector size] matrix
+  const cv::Mat &sampleWeights,   // column vector of size [num samples]
   const int lastLayerToTrain,
   const updateParam &param,
   const int maxIter,
-  //const float corruption_level,
+  const int minibatchSize,
   std::vector<real> &E           // out : errors.
   )
 {
-  cv::Mat inputs = inputs_.clone(); // copy data
+  const int numSamples = inputs_.rows;
+  const int batchSize = (minibatchSize == 0)? numSamples : minibatchSize;
+
+  //cv::Mat inputs = inputs_.clone(); // copy data
+  cv::Mat inputs = inputs_;
 
   // normalize sampleWeights
   cv::Mat sumMat;
@@ -2535,12 +2711,12 @@ int NeuralNet::autoencode(
     printf("Layer %d\n", layer);
     LogA("Layer %d\n", layer);
 
-    int ret = autoencode_one_layer(layer, inputs, sampleWeights, param, maxIter, E[layer]);
+    int ret = autoencode_one_layer(layer, inputs, sampleWeights, param, maxIter, minibatchSize, E[layer]);
     if (ret == 8)
     {
       if (layers[layer].type == NNLayer::maxPool)
       {
-        cv::Mat matSize = (cv::Mat_<int>(1, 4) << inputs.rows, layers[layer].numOutMaps, layers[layer].outMapSize.at<int>(0), layers[layer].outMapSize.at<int>(1));
+        cv::Mat matSize = (cv::Mat_<int>(1, 4) << batchSize, layers[layer].numOutMaps, layers[layer].outMapSize.at<int>(0), layers[layer].outMapSize.at<int>(1));
         layers[layer].activation.create(4, (int *)matSize.data, CV_REAL);
         layers[layer].df.create(4, (int *)matSize.data, CV_32S);
         if (layers[layer].activation.data == 0 || layers[layer].df.data == 0)
@@ -2562,7 +2738,7 @@ int NeuralNet::autoencode(
   return 0;
 }
 
-int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs)
+int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs, const int minibatchSize)
 {
   const int numLayers = (int)layers.size();
 
@@ -2600,6 +2776,7 @@ int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs)
   }
 
   const int numSamples = inputs.size[0];
+  const int batchSize = (minibatchSize == 0)? numSamples : minibatchSize;
   outputs.create(numSamples, layers[numLayers - 1].outSize, CV_REAL);
 
   // この関数は funcToEvaluateEvery() を通して NeuralNet::train() の内部からも呼ばれることがある。
@@ -2615,24 +2792,24 @@ int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs)
 
     if (layers[i].type == NNLayer::perceptron)
     {
-      layers[i].activation.create(numSamples, layers[i].outSize, CV_REAL);
-      layers[i].df.create(numSamples, layers[i].outSize, CV_REAL);
+      layers[i].activation.create(batchSize, layers[i].outSize, CV_REAL);
+      layers[i].df.create(batchSize, layers[i].outSize, CV_REAL);
 
       if (layers[i].df.data == 0)
         return 6;
     }
     else if (layers[i].type == NNLayer::linearPerceptron)
     {
-      layers[i].activation.create(numSamples, layers[i].outSize, CV_REAL);
+      layers[i].activation.create(batchSize, layers[i].outSize, CV_REAL);
     }
     else if (layers[i].type == NNLayer::softMax)
     {
-      layers[i].activation.create(numSamples, layers[i].outSize, CV_REAL);
+      layers[i].activation.create(batchSize, layers[i].outSize, CV_REAL);
     }
     else if (layers[i].type == NNLayer::convolution)
     {
       // <num samples>x<numOutMaps>x<out_H>x<out_W> matrix
-      cv::Mat matSize = (cv::Mat_<int>(1, 4) << numSamples, layers[i].numOutMaps, layers[i].outMapSize.at<int>(0), layers[i].outMapSize.at<int>(1));
+      cv::Mat matSize = (cv::Mat_<int>(1, 4) << batchSize, layers[i].numOutMaps, layers[i].outMapSize.at<int>(0), layers[i].outMapSize.at<int>(1));
       layers[i].activation.create(4, (int *)matSize.data, CV_REAL);
       layers[i].df.create(4, (int *)matSize.data, CV_REAL);
       if (layers[i].df.data == 0)
@@ -2641,7 +2818,7 @@ int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs)
     else if (layers[i].type == NNLayer::maxPool)
     {
       // <num samples>x<numOutMaps>x<out_H>x<out_W> matrix
-      cv::Mat matSize = (cv::Mat_<int>(1, 4) << numSamples, layers[i].numOutMaps, layers[i].outMapSize.at<int>(0), layers[i].outMapSize.at<int>(1));
+      cv::Mat matSize = (cv::Mat_<int>(1, 4) << batchSize, layers[i].numOutMaps, layers[i].outMapSize.at<int>(0), layers[i].outMapSize.at<int>(1));
       layers[i].activation.create(4, (int *)matSize.data, CV_REAL);
       layers[i].df.create(4, (int *)matSize.data, CV_32S);
       if (layers[i].df.data == 0)
@@ -2653,11 +2830,35 @@ int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs)
   }
 
   // forward pass
-  const cv::Mat *pX = &inputs;
-  for (int i = 0; i < numLayers; ++i)
-    layers[i].forwardPropagate(pX, false);
+  if (minibatchSize == 0)
+  {
+    const cv::Mat *pX = &inputs;
+    for (int i = 0; i < numLayers; ++i)
+      layers[i].forwardPropagate(pX, false);
 
-  pX->copyTo(outputs);
+    pX->copyTo(outputs);
+  }
+  else
+  {
+    // set identity permutation
+    std::vector<unsigned int> permutation(numSamples);
+    for (int i = 0; i < numSamples; ++i)
+      permutation[i] = i;
+
+    cv::Mat inputs_sub;
+    int sampleHead = 0; // the index of the first sample in the current minibatch
+    for (int sampleHead = 0; sampleHead < numSamples; sampleHead += minibatchSize)
+    {
+      ChooseSamples(inputs, inputs_sub, sampleHead, minibatchSize, permutation);
+
+      const cv::Mat *pX = &inputs_sub;
+      for (int i = 0; i < numLayers; ++i)
+        layers[i].forwardPropagate(pX, false);
+
+      int numOutRows = (sampleHead + minibatchSize < numSamples)? minibatchSize : (numSamples - sampleHead);
+      pX->rowRange(0, numOutRows).copyTo(outputs.rowRange(sampleHead, sampleHead + numOutRows));
+    }
+  }
 
   for (int i = 0; i < numLayers; ++i)
   {
@@ -2737,6 +2938,10 @@ int NeuralNet::writeWeightImage(
     else
     {
       cv::Mat tmp1, tmp2;
+
+      if (layers[0].type != NNLayer::perceptron && layers[0].type != NNLayer::linearPerceptron)
+        return 3;
+
       tmp1 = layers[0].weight;
       int i;
       for (i = 1; i <= layer; ++i)
@@ -2780,7 +2985,7 @@ int NeuralNet::writeWeightImage(
           }
         }
         else
-          return 3;
+          return 4;
       }
       W = ((i % 2) == 1)? tmp1 : tmp2;
     }
@@ -2798,27 +3003,22 @@ int NeuralNet::writeWeightImage(
     const int numCellsX = (int)sqrt((real)numOutputs);
     const int numCellsY = (numOutputs - 1) / numCellsX + 1;
 
-    cv::Mat img(numCellsY * (cellHeight + 1) - 1, numCellsX * (cellWidth + 1) - 1, CV_8U, cv::Scalar(0));
-    cv::Mat subMat;
-    cv::Scalar mean, stddev;
-
     if (coef == 0)
     {
-      // 一画像が一行に対応するよう、転置する。
-      W = W.t();
+      cv::Scalar mean, stddev;
       meanStdDev(W, mean, stddev);
-    }
-    else
-    {
-      subMat = W * coef;
-      exp(-subMat, subMat);
-      subMat = real(256.0) / (real(1.0) + subMat);
-      subMat.convertTo(subMat, CV_8U);
-
-      // 一画像が一行に対応するよう、転置する。
-      subMat = subMat.t();
+      coef = 10 / (real)stddev[0];
     }
 
+    cv::Mat subMat = W * coef;
+    exp(-subMat, subMat);
+    subMat = 1 / (1 + subMat);
+    subMat.convertTo(subMat, CV_8U, 256);
+
+    // 一画像が一行に対応するよう、転置する。
+    subMat = subMat.t();
+
+    cv::Mat img(numCellsY * (cellHeight + 1) - 1, numCellsX * (cellWidth + 1) - 1, CV_8U, cv::Scalar(0));
     for (int cell_y = 0; cell_y < numCellsY; ++cell_y)
     {
       for (int cell_x = 0; cell_x < numCellsX; ++cell_x)
@@ -2827,29 +3027,9 @@ int NeuralNet::writeWeightImage(
         if (index2 >= numOutputs)
           break;
 
-        if (coef == (real)0)
-        {
-          subMat = W.row(index2).reshape(0, cellHeight);
-#if 1
-          mean = cv::mean(subMat);
-          subMat -= mean[0];
-          subMat *= (1 / stddev[0]);
-#else
-          normalize(subMat, subMat, -6, 6, cv::NORM_MINMAX);
-#endif
-          exp(-subMat, subMat);
-          subMat = real(256.0) / (real(1.0) + subMat);
-          subMat.convertTo(subMat, CV_8U);
-          subMat.copyTo(img(
-            cv::Range((cellHeight + 1) * cell_y, (cellHeight + 1) * (cell_y + 1) - 1),
-            cv::Range((cellWidth + 1) * cell_x, (cellWidth + 1) * (cell_x + 1) - 1)));
-        }
-        else
-        {
-          subMat.row(index2).reshape(0, cellHeight).copyTo(img(
-            cv::Range((cellHeight + 1) * cell_y, (cellHeight + 1) * (cell_y + 1) - 1),
-            cv::Range((cellWidth + 1) * cell_x, (cellWidth + 1) * (cell_x + 1) - 1)));
-        }
+        subMat.row(index2).reshape(0, cellHeight).copyTo(img(
+          cv::Range((cellHeight + 1) * cell_y, (cellHeight + 1) * (cell_y + 1) - 1),
+          cv::Range((cellWidth + 1) * cell_x, (cellWidth + 1) * (cell_x + 1) - 1)));
       }
     }
 
@@ -2857,9 +3037,6 @@ int NeuralNet::writeWeightImage(
   }
   else if (layers[layer].type == NNLayer::convolution)
   {
-    if (cumulative)
-      return 5;
-
     const int cellHeight = layers[layer].filterSize.at<int>(0);
     const int cellWidth = layers[layer].filterSize.at<int>(1);
     const int numCellsX = layers[layer].numInMaps;

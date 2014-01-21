@@ -37,9 +37,8 @@ struct updateParam
   real finalLearningRate;  // learning rate ÇÃç≈èIíl
   real learningRateDecay;  // åJÇËï‘ÇµñàÇ… learning rate Ç…ä|ÇØÇÈåWêî
   real momentum;           // momentum
-  real initMomentum;       // momentum ÇÃèâä˙íl
   real finalMomentum;      // momentum ÇÃç≈èIíl
-  int momentumDecayEpoch;  // Ç±ÇÃâÒêîå„ÇÕ momentum ÇÕ finalMomentum ÇÃÇ‹Ç‹Ç…Ç»ÇÈÅB
+  real momentumDelta;      // åJÇËï‘ÇµñàÇ… momentum Ç…ë´Ç∑êî
 
   // rprop
   real dw0;
@@ -50,7 +49,7 @@ struct updateParam
 
   updateParam() : type(rprop),
     learningRate((real)0.1), finalLearningRate((real)0.00001), learningRateDecay((real)0.998),
-    momentum((real)0), initMomentum((real)0.0), finalMomentum((real)0.9), momentumDecayEpoch(200),
+    momentum((real)0), finalMomentum((real)0.9), momentumDelta((real)0.0045),
     dw0((real)0.001), dw_plus((real)1.2), dw_minus((real)0.5), dw_max((real)50.0), dw_min(REAL_EPSILON) {}
 };
 
@@ -104,7 +103,7 @@ class NNLayer
 
   //----------------------------------------------------------------------------------------------
 
-  void forwardPropagate(const cv::Mat* &pX, const bool dropout = false);
+  void forwardPropagate(const cv::Mat* &pX, const bool dropout = false, const bool copyBackDropout = false);
   void activateTanh(const cv::Mat &y);
   void activateSoftMax(const cv::Mat &y);
   void UpdateWeightsRprop(const cv::Mat &dEdw, const updateParam &param);
@@ -122,16 +121,20 @@ public:
   void createPerceptronLayer(const int inSize, const int outSize, const real dropoutRatio = 0);
 
   // Create perceptron layer whose activation function is the identity function.
-  void createLinearPerceptronLayer(const int inSize, const int outSize, const real dropoutRatio = 0, const real maxWeightNorm = 0);
+  void createLinearPerceptronLayer(
+    const int inSize,
+    const int outSize,
+    const real dropoutRatio = 0,
+    const real maxWeightNorm = 0);
 
   void createConvolutionLayer(
     const cv::Mat inMapSize,     // e.g. {13, 13} for input feature maps of size HxW=13x13
     //const cv::Mat filterSizez  // e.g. {40, 20, 5, 5} for 40 output maps, 20 input maps, HxW=5x5 filters. 
     const cv::Mat filterSize,    // e.g. {5, 5} for HxW=5x5 filters.
     const int numInMaps,         // number of input feature maps
-    const int numOutMaps         // number of output feature maps
-    );
-  // With above parameters, this layer outputs 40 maps of size 9x9 (9=13-5+1), out of 20 maps of size 13x13,
+    const int numOutMaps,        // number of output feature maps
+    const real dropoutRatio = 0);
+  // With the above parameters, this layer outputs 40 maps of size 9x9 (9=13-5+1), out of 20 maps of size 13x13,
   // using 800 (=20*40) filters of size 5x5.
 
   // Create 2D max-pool layer.
@@ -139,7 +142,7 @@ public:
     //const cv::Mat inSizes,     // e.g. {20, 26, 26} for 20 maps of size HxW=26x26
     const cv::Mat filterSize     // e.g. {2, 2} for HxW=2x2 filters. 
     );
-  // With above parameters, this layer outputs 20 maps of size 13x13 (13=26/2), out of 20 maps of size 26x26,
+  // With the above parameters, this layer outputs 20 maps of size 13x13 (13=26/2), out of 20 maps of size 26x26,
   // using the max-pool filter of size 2x2.
 
   void createSoftMaxLayer(const int inOutSize);
@@ -180,6 +183,7 @@ class NeuralNet
     const cv::Mat &sampleWeights,  // column vector of size [num samples]
     const int firstLayerToTrain,   // index of the first layer to train
     const updateParam &update_param,
+    cv::Mat &diffFromTarget,
     real &E                        // out : error.
     );
 
@@ -189,6 +193,7 @@ class NeuralNet
     const cv::Mat &sampleWeights,   // column vector of size [num samples]
     const updateParam &update_param,
     const int maxIter,
+    const int minibatchSize,
     real &E                         // out : error.
     );
 
@@ -216,6 +221,8 @@ public:
     const int maxIter,
     const int evaluateEvery,
     void (*funcToEvaluateEvery)(NeuralNet &nn), // callback function to be called every 'evaluateEvery' epochs
+    const bool initializeLearningState,
+    const int minibatchSize,
     real &E                        // out : error.
     );
 
@@ -225,10 +232,11 @@ public:
     const int lastLayerToTrain,
     const updateParam &update_param,
     const int maxIter,
+    const int minibatchSize,
     std::vector<real> &E           // out : errors.
     );
 
-  int predict(const cv::Mat &inputs, cv::Mat &outputs);
+  int predict(const cv::Mat &inputs, cv::Mat &outputs, const int minibatchSize = 0);
 
   int writeBinary(const char* filename) const;
   int readBinary(const char* filename);

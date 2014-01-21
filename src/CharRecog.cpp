@@ -25,7 +25,7 @@ inline static bool SJIS2(const unsigned char c) { return (0x40 <= c && c <= 0xfc
 
 static void  PrintUsage(const char *exePath)
 {
-  printf_s("%s - Character recognition program, version of 2014/01/09\n", exePath);
+  printf_s("%s - Character recognition program, version of 2014/01/22\n", exePath);
   printf_s(
     "Usage: CharRecog {options}\n"
     "       <command> [<data-dir> [<data-dir2>]]\n\n"
@@ -42,33 +42,33 @@ static void  PrintUsage(const char *exePath)
     "                  L for perceptron layer with identity activation function, followed by\n"
     "                    inSize,outSize[,dropoutRatio[,maxWeightNorm]]\n"
     "                  C for convolution layer with tanh activation function, followed by\n"
-    "                    inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps\n"
+    "                    inMapH,inMapW,filterH,filterW,numInMaps,numOutMaps[,dropoutRatio]\n"
     "                  M for max-pool or maxout layer, followed by\n"
     "                    filterH,filterW\n"
     "                  S for softmax layer, followed by\n"
     "                    inOutSize\n"
     "  -m STR    training method and its parameters\n"
-    "            standard backprop:\n"
-    "              BPROP[,<initial learning rate>,<final learning rate>,<learning rate decay ratio>,\n"
-    "                    <initial momentum>,<final momentum>,<momentum decay epoch>]\n"
-    "            rprop (default):\n"
-    "              RPROP[,dw0,dw_plus,dw_minus,dw_max,dw_min]\n"
+    "            BPROP[,<initial learning rate>,<final learning rate>,<learning rate decay ratio>,\n"
+    "                   <initial momentum>,<final momentum>,<momentum delta>]\n"
+    "                standard backprop algorithm\n"
+    "            RPROP[,dw0,dw_plus,dw_minus,dw_max,dw_min]\n"
+    "                rprop algorithm(default)\n"
     "  -f NUM    index of the first layer to train for TRAIN\n"
     "  -l NUM    index of the last layer to train for AE\n"
     "  -h NUM    height of input images\n"
     "  -w NUM    width of input images\n"
     "            If the actual size is different, the image will be resized.\n"
-    "  -i NUM    number of iteration for training (default 100),\n"
-    "            max number of samples to evaluate for testing (default INT_MAX)\n"
-    "  -b        background of input images is black\n"
-    "  -e STR    list of supported image file extensions.\n"
-    "            Example: \"$JPG$JPEG$PNG$TIFF$\""
-    "  -u        true answer is unknown when testing\n"
+    "  -i NUM    number of iteration for training (default 100)\n"
+    "  -b        specify if the background of input images is black\n"
+    "  -e STR    list of supported image file extensions\n"
+    "            Example: \"$JPG$JPEG$PNG$TIFF$\"\n"
+    "  -u        specify if the true answer is unknown when testing\n"
     "  -c        in the preprocessing, cut out the region containing the character\n"
-    "  -a        on each epoch, apply random affine transformations to the input images\n"
+    "  -a        on each epoch, apply random affine transformations to the training images\n"
     "  -p STR    name of the neural network parameter file (default: NN_params.bin)\n"
-    "  -E NUM    when the command is TRAIN, calculate the recognition error rate every this epochs\n"
-    "  -C        when the command is WIMAGE, output cumulative weights as images\n"
+    "  -E NUM    if TRAIN, calculate the recognition error rate every this epochs\n"
+    "  -C        if WIMAGE, output cumulative weights as images\n"
+    "  -B        minibatch size\n"
     );
 }
 
@@ -93,12 +93,13 @@ struct ParamType {
   std::string paramFileName;
   int evaluateEvery;
   bool cumulative;
+  int minibatchSize;
 
   ParamType() : verbose(false), firstLayerToTrain(0), lastLayerToTrain(-1),
     imageHeight(24), imageWidth(24), maxIter(100), maxTestImage(INT_MAX), blackBackground(false),
     trueAnswerUnknown(false), cutOutBlackRegion(false), randomAffineTransform(false),
     supportedExtensionList("$BMP$GIF$ICO$JPG$JPEG$PBM$PCD$PGM$PCT$PICT$PIC$PNG$PPM$PSD$TIF$TIFF$XBM$XPM$"),
-    paramFileName("NN_params.bin"), evaluateEvery(0), cumulative(false)
+    paramFileName("NN_params.bin"), evaluateEvery(0), cumulative(false), minibatchSize(0)
   {}
   void log() const
   {
@@ -122,17 +123,20 @@ struct ParamType {
       Log("  first layer to train       %d\n", firstLayerToTrain);
       Log("  max iteration              %d\n", maxIter);
       Log("  evaluate error every       %d\n", evaluateEvery);
+      Log("  minibatch size             %d\n", minibatchSize);
     }
     else if (command == "AE")
     {
       Log("  training set dir           %s\n", dataDir.c_str());
       Log("  last layer to autoencode   %d\n", lastLayerToTrain);
+      Log("  minibatch size             %d\n", minibatchSize);
     }
     else if (command == "TEST")
     {
       Log("  test set dir               %s\n", dataDir.c_str());
       Log("  max # of test images       %d\n", maxTestImage);
       Log("  true answer is unknown     %s\n", trueAnswerUnknown? "true" : "false");
+      Log("  minibatch size             %d\n", minibatchSize);
     }
     else if (command == "WIMAGE")
     {
@@ -154,9 +158,9 @@ struct ParamType {
       Log("  initial learning rate      %f\n", update_param.learningRate);
       Log("  final learning rate        %f\n", update_param.finalLearningRate);
       Log("  learning rate decay rate   %f\n", update_param.learningRateDecay);
-      Log("  initial momentum           %f\n", update_param.initMomentum);
+      Log("  initial momentum           %f\n", update_param.momentum);
       Log("  final momentum             %f\n", update_param.finalMomentum);
-      Log("  momentum decay epoch       %d\n", update_param.momentumDecayEpoch);
+      Log("  momentum delta             %f\n", update_param.momentumDelta);
     }
   }
 } param;
@@ -300,11 +304,11 @@ static int GetNormalizedImage(
   if (param.blackBackground)
 	  image = 255 - image;
 
-	// 白い余白を追加して正方形にする。
-	Square(image);
-
   if (param.cutOutBlackRegion)
   {
+	  // 白い余白を追加して正方形にする。
+	  Square(image);
+
 	  // 大きさを 64x64 にそろえてから小さなゴミを除去する。
 	  if (image.rows != 64 || image.cols != 64)
       cv::resize(image, image, cv::Size(64, 64), 0, 0, CV_INTER_AREA);
@@ -445,6 +449,7 @@ static int Predict(
 
   cv::Mat samples(0, param.imageHeight * param.imageWidth, CV_REAL);
   std::vector<unsigned _int16> trueChar;
+  std::vector<std::string> imgFileNames;
 
 	WIN32_FIND_DATAA fileData;
 	HANDLE hdl = FindFirstFileA(wildcard.pData(), &fileData);
@@ -471,6 +476,7 @@ static int Predict(
           }
 
           trueChar.push_back(c);
+          imgFileNames.push_back(fileData.cFileName);
 					++numTestData;
 
 					if( numTestData > testDataMax )
@@ -483,7 +489,7 @@ static int Predict(
 
 	// それぞれの文字である確率のベクトルが mlp_response に得られる。
 	cv::Mat mlp_response;
-  int ret = nn.predict(samples, mlp_response);
+  int ret = nn.predict(samples, mlp_response, param.minibatchSize);
   if (ret != 0)
   {
 		Log("Error: NeuralNet::predict() returned %d.\n", ret);
@@ -508,7 +514,7 @@ static int Predict(
 #if 0 // 5つの候補とテンプレート画像を比べる。
 
 			// 現在の文字画像を sampleImage に得る。
-			sjisString file = samplesFolder + fileData.cFileName;
+			sjisString file = samplesFolder + imgFileNames[s].c_str();
 			cv::Mat sampleImage;
 			GetNormalizedImage(sampleImage, file.pData(), param.imageHeight, param.imageWidth, 150);
 
@@ -521,7 +527,7 @@ static int Predict(
 			{
 				pos = dst.at<int>(s, i);
 				unsigned _int16 c2 = (unsigned _int16)pos + firstCharCode;
-				// fprintf(fpOut, "%s(%.3lf%%) ", charStr(c2), 100.0 * mlp_response.at<double>(0, pos));
+				// fprintf(fpOut, "%s(%.3lf%%) ", charStr(c2), 100.0 * mlp_response.at<double>(s, pos));
 
 				for (int j = 1; ; ++j)
 				{
@@ -544,11 +550,11 @@ static int Predict(
 				}
 			}
 						
-			//fprintf(fpOut, "%s -> %s (%s?) (%s)\n", charStr(trueChar), charStr(predictedChar), charStr(c3), fileData.cFileName);
+			//fprintf(fpOut, "%s -> %s (%s?) (%s)\n", charStr(trueChar), charStr(predictedChar), charStr(c3), imgFileNames[s].c_str());
 
 			if (trueChar == c3)
 			{
-				Log("%s(%24s) OK\n", charStr(trueChar), fileData.cFileName);
+				Log("%s(%24s) OK\n", charStr(trueChar), imgFileNames[s].c_str());
 				++numGood;
 			}
 			else
@@ -565,12 +571,12 @@ static int Predict(
 					}
 				}
 
-				Log("%s(%24s) %5dth %s", charStr(trueChar), fileData.cFileName, order, charStr(c3));
+				Log("%s(%24s) %5dth %s", charStr(trueChar), imgFileNames[s].c_str(), order, charStr(c3));
 				for(int i = 0; i < 5; ++i)
 				{
 					pos = dst.at<int>(s, i);
 					unsigned _int16 c2 = (unsigned _int16)pos + firstCharCode;
-					Log(" %s(%.2lf%%)", charStr(c2), 100.0 * mlp_response.at<double>(0, pos));
+					Log(" %s(%.2lf%%)", charStr(c2), 100.0 * mlp_response.at<double>(s, pos));
 				}
 				Log("\n");
 			}
@@ -581,8 +587,8 @@ static int Predict(
 			{
         if (param.verbose)
         {
-  				Log("%s(%24s) OK\n", charStr(trueChar[s]), fileData.cFileName);
-  				printf("%s(%24s) OK\n", charStr(trueChar[s]), fileData.cFileName);
+  				Log("%s(%24s) OK\n", charStr(trueChar[s]), imgFileNames[s].c_str());
+  				printf("%s(%24s) OK\n", charStr(trueChar[s]), imgFileNames[s].c_str());
         }
 				++numGood;
 			}
@@ -600,14 +606,14 @@ static int Predict(
 					}
 				}
 
-				Log("%s(%24s) %5dth ", charStr(trueChar[s]), fileData.cFileName, order);
-				printf("%s(%24s) %5dth ", charStr(trueChar[s]), fileData.cFileName, order);
+				Log("%s(%24s) %5dth ", charStr(trueChar[s]), imgFileNames[s].c_str(), order);
+				printf("%s(%24s) %5dth ", charStr(trueChar[s]), imgFileNames[s].c_str(), order);
 				for(int i = 0; i < 5; ++i)
 				{
 					int pos = dst.at<int>(s, i);
 					unsigned _int16 c2 = (unsigned _int16)pos + nn.firstCharCode;
-					Log(" %s(%.2f%%)", charStr(c2), 100.0 * mlp_response.at<real>(0, pos));
-					printf(" %s(%.2f%%)", charStr(c2), 100.0 * mlp_response.at<real>(0, pos));
+					Log(" %s(%.2f%%)", charStr(c2), 100.0 * mlp_response.at<real>(s, pos));
+					printf(" %s(%.2f%%)", charStr(c2), 100.0 * mlp_response.at<real>(s, pos));
 				}
 				Log("\n");
 				printf("\n");
@@ -1163,6 +1169,10 @@ int _tmain(int argc, _TCHAR* argv[])
       param.cutOutBlackRegion = true;
     else if (strcmp(argv[i], "-C") == 0)
       param.cumulative = true;
+    else if (strcmp(argv[i], "-u") == 0)
+      param.trueAnswerUnknown = true;
+    else if (strcmp(argv[i], "-B") == 0)
+      param.minibatchSize = atoi(argv[++i]);
     else if (strcmp(argv[i], "-e") == 0)
       param.supportedExtensionList = argv[++i];
     else if (strcmp(argv[i], "-L") == 0)
@@ -1193,13 +1203,13 @@ int _tmain(int argc, _TCHAR* argv[])
           param.update_param.learningRateDecay = (real)atof(token.c_str());
           if (!getline(seg, token, ','))
             break;
-          param.update_param.initMomentum = (real)atof(token.c_str());
+          param.update_param.momentum = (real)atof(token.c_str());
           if (!getline(seg, token, ','))
             break;
           param.update_param.finalMomentum = (real)atof(token.c_str());
           if (!getline(seg, token, ','))
             break;
-          param.update_param.momentumDecayEpoch = atoi(token.c_str());
+          param.update_param.momentumDelta = (real)atof(token.c_str());
         }
       }
       else if (token == "RPROP")
@@ -1286,6 +1296,14 @@ int _tmain(int argc, _TCHAR* argv[])
       unsigned _int16 firstCharCode;
       int class_count;
       const int numData = CountFilesInDir(param.dataDir, param.supportedExtensionList, firstCharCode, class_count);
+
+      if (numData == 0)
+      {
+        Log("Error: cannot find data file in directory %s\n", param.dataDir.c_str());
+        ret = 2;
+        break;
+      }
+
       Log("Number of data is %d.\n", numData);
       Log("  First character   : '%s'.\n", charStr(firstCharCode));
       Log("  Number of classes : %d.\n", class_count);
@@ -1299,7 +1317,7 @@ int _tmain(int argc, _TCHAR* argv[])
         if (firstCharCode < nn.firstCharCode)
         {
     	    Log("Error: the first char code in data < nn.firstCharCode.\n");
-          ret = 2;
+          ret = 3;
           break;
         }
         firstCharCode = nn.firstCharCode;
@@ -1308,7 +1326,7 @@ int _tmain(int argc, _TCHAR* argv[])
       if (nn.outSize() < class_count)
       {
     	  Log("Error: number of classes in data exceeds outSize of NN.\n");
-        ret = 3;
+        ret = 4;
         break;
       }
       class_count = nn.outSize();
@@ -1326,16 +1344,14 @@ int _tmain(int argc, _TCHAR* argv[])
       if (retcode != 0)
       {
     	  Log("Error: ReadTrainData() returned%d.\n", retcode);
-        ret = 4;
+        ret = 5;
         break;
       }
 
       if (param.command == "TRAIN")
       {
-	      // 1. unroll the responses
-	      Log("Unrolling the responses...\n");
-
         // set new_responses (1-of-K cording)
+	      Log("Unrolling the responses...\n");
 	      cv::Mat new_responses(numData, class_count, CV_REAL);
         new_responses = 0;
 	      for (int i = 0; i < numData; ++i)
@@ -1360,6 +1376,8 @@ int _tmain(int argc, _TCHAR* argv[])
           param.maxIter,
           param.evaluateEvery,
           CalculateRecognitionError,
+          true,
+          param.minibatchSize,
           E);
 	      
         t2 = (double)cv::getTickCount();
@@ -1369,7 +1387,7 @@ int _tmain(int argc, _TCHAR* argv[])
         if (retcode != 0)
         {
           Log("nn.train() returned %d\n", retcode);
-          ret = 5;
+          ret = 6;
           break;
         }
 
@@ -1385,7 +1403,14 @@ int _tmain(int argc, _TCHAR* argv[])
 	      Log("Training by autoencoding...\n");
         double t2, t1 = (double)cv::getTickCount();
         std::vector<real> E;
-        int retcode = nn.autoencode(trainData, sampleWeights, param.lastLayerToTrain, param.update_param, param.maxIter, E);
+        int retcode = nn.autoencode(
+          trainData,
+          sampleWeights,
+          param.lastLayerToTrain,
+          param.update_param,
+          param.maxIter,
+          param.minibatchSize,
+          E);
 
 	      t2 = (double)cv::getTickCount();
 	      Log("Time for training : %0.3lf\n", (t2 - t1) / cv::getTickFrequency());
@@ -1394,7 +1419,7 @@ int _tmain(int argc, _TCHAR* argv[])
         if (retcode != 0)
         {
           Log("nn.autoencode() returned %d\n", retcode);
-          ret = 6;
+          ret = 7;
           break;
         }
       }
@@ -1427,7 +1452,7 @@ int _tmain(int argc, _TCHAR* argv[])
         if (ret2 != 0)
         {
       	  Log("Cannot write wight image for layer %d. ret = %d\n", i, ret2);
-          ret = 7;
+          ret = 8;
         }
       }
     }

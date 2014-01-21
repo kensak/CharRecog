@@ -134,6 +134,7 @@ EXAMPLES
 HISTORY
     2014/01/09  First release.
     2014/01/15  Supports minibatch updates. Supports Dropout on convolutional layers.
+    2014/01/22  Fixed a bug related to Dropout.
 
 LICENSE
     Dual licensed under the MIT license and GPL v2 license.
