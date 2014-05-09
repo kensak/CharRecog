@@ -42,6 +42,32 @@ static void printMat(const cv::Mat &m)
   }
 }
 
+void elemMul_sub_GPU(
+  const cv::Mat &A_,
+  cv::Mat &B_,
+  int rowBlockSize,
+  concurrency::queuing_mode qmode = concurrency::queuing_mode::queuing_mode_automatic)
+{
+  auto accView = concurrency::accelerator().create_view(qmode);
+
+  const int A_rows = A_.size[0];
+  const int A_cols = (int)A_.total() / A_.size[0];
+  const int numBlocks = (A_rows - 1)/ rowBlockSize + 1;
+  for (int block = 0; block < numBlocks; ++block)
+  {
+    int rowStart = block * rowBlockSize;
+    int numRows = (block < numBlocks - 1)? rowBlockSize : A_rows - (numBlocks - 1) * rowBlockSize;
+
+    concurrency::array_view<const real, 2> A(numRows, A_cols, A_.ptr<real>(rowStart));
+    concurrency::array_view<real, 2> B(numRows, A_cols, B_.ptr<real>(rowStart));
+    parallel_for_each(accView, A.extent, [=](concurrency::index<2> idx) restrict(amp)
+    {
+      B[idx] *= A[idx];
+    });
+    B.synchronize();
+  }
+}
+
 // element wise multiplication : B_i *= A_i for all i.
 static void elemMul(
   const cv::Mat &A_,
@@ -65,6 +91,34 @@ static void elemMul(
 
   if (global_GPU_info.GPU_exists)
   {
+    static int rowBlockSize = 20000;
+    cv::Mat B_tmp;
+    bool doLoop = true;
+    while (doLoop)
+    {
+      B_.copyTo(B_tmp);
+      try 
+      { 
+        elemMul_sub_GPU(A_, B_tmp, rowBlockSize, concurrency::queuing_mode::queuing_mode_immediate);
+        B_tmp.copyTo(B_);
+        break;
+      }
+      catch (concurrency::accelerator_view_removed& ex) 
+      { 
+        if (rowBlockSize < 100)
+        {
+          Log("elemMul: cannot recover from TDR error. rowBlockSize is %d.\n", rowBlockSize);
+          Log("  TDR exception received: %s", ex.what());
+          Log("  Error code: %X\n", ex.get_error_code());  
+          Log("  Removed reason: %X\n\n", ex.get_view_removed_reason()); 
+          doLoop = false;
+        }
+        else
+          rowBlockSize /= 2;
+      }
+    }
+
+    /*
 #ifdef REAL_IS_FLOAT
     const int rowBlockSize = 20000;
 #else
@@ -87,6 +141,7 @@ static void elemMul(
       });
       B.synchronize();
     }
+    */
   }
   else
     cv::multiply(A_, B_, B_);
@@ -94,30 +149,42 @@ static void elemMul(
   cv::multiply(A_, B_, B_);
 #endif
 }
-/*
-static void elemMul(
-  const real *pA,
-  const int size, 
-  real *pB
-  )
+
+void elemMul_sub_GPU(
+  const cv::Mat &A_,
+  const cv::Mat &B_,
+  cv::Mat &C_,
+  int rowBlockSize,
+  concurrency::queuing_mode qmode = concurrency::queuing_mode::queuing_mode_automatic)
 {
-#ifdef HAVE_CPPAMP
+  auto accView = concurrency::accelerator().create_view(qmode);
 
-  concurrency::array_view<const real, 1> A(size, pA);
-  concurrency::array_view<real, 1> B(size, pB);
-  parallel_for_each(B.extent, [=](concurrency::index<1> idx) restrict(amp)
+  const int A_rows = A_.size[0];
+  const int A_cols = (int)A_.total() / A_.size[0];
+
+  if (A_rows < 1)
+    return;
+
+  if (A_.size[0] != C_.size[0] || A_.total() != C_.total() || A_.type() != C_.type())
+    C_.create(A_rows, A_cols, A_.type());
+
+  const int numBlocks = (A_rows - 1)/ rowBlockSize + 1;
+  for (int block = 0; block < numBlocks; ++block)
   {
-    B[idx] *= A[idx];
-  });
-  B.synchronize();
+    int rowStart = block * rowBlockSize;
+    int numRows = (block < numBlocks - 1)? rowBlockSize : A_rows - (numBlocks - 1) * rowBlockSize;
 
-#else
-  const cv::Mat A_(1, size, CV_REAL, const_cast<real *>(pA));  // alias
-  cv::Mat B_(1, size, CV_REAL, pB);  // alias
-  cv::multiply(A_, B_, B_);
-#endif
+    concurrency::array_view<const real, 2> A(numRows, A_cols, A_.ptr<real>(rowStart));
+    concurrency::array_view<const real, 2> B(numRows, A_cols, B_.ptr<real>(rowStart));
+    concurrency::array_view<real, 2> C(numRows, A_cols, C_.ptr<real>(rowStart));
+    C.discard_data();
+    parallel_for_each(accView, A.extent, [=](concurrency::index<2> idx) restrict(amp)
+    {
+      C[idx] = A[idx] * B[idx];
+    });
+    C.synchronize();
+  }
 }
-*/
 
 // element wise multiplication : C_i = A_i * B_i for all i.
 static void elemMul(
@@ -143,6 +210,33 @@ static void elemMul(
 
   if (global_GPU_info.GPU_exists)
   {
+    static int rowBlockSize = 20000;
+    cv::Mat C_tmp;
+    bool doLoop = true;
+    while (doLoop)
+    {
+      try 
+      { 
+        elemMul_sub_GPU(A_, B_, C_tmp, rowBlockSize, concurrency::queuing_mode::queuing_mode_immediate);
+        C_ = C_tmp;
+        break;
+      }
+      catch (concurrency::accelerator_view_removed& ex) 
+      { 
+        if (rowBlockSize < 100)
+        {
+          Log("elemMul: cannot recover from TDR error. rowBlockSize is %d.\n", rowBlockSize);
+          Log("  TDR exception received: %s", ex.what());
+          Log("  Error code: %X\n", ex.get_error_code());  
+          Log("  Removed reason: %X\n\n", ex.get_view_removed_reason()); 
+          doLoop = false;
+        }
+        else
+          rowBlockSize /= 2;
+      }
+    }
+
+    /*
     const int A_rows = A_.size[0];
     const int A_cols = (int)A_.total() / A_.size[0];
 
@@ -175,6 +269,7 @@ static void elemMul(
       });
       C.synchronize();
     }
+    */
   }
   else
     cv::multiply(A_, B_, C_);
@@ -183,34 +278,60 @@ static void elemMul(
   cv::multiply(A_, B_, C_);
 #endif
 }
-/*
-static void elemMul(
-  const real *pA,
-  const real *pB,
-  const int size, 
-  real *pC
-  )
+
+static void matMul_sub_GPU(
+  const cv::Mat &src1,
+  const cv::Mat &src2,
+  real alpha,
+  cv::Mat &dst,
+  int flags,
+  int rowBlockSize,
+  concurrency::queuing_mode qmode = concurrency::queuing_mode::queuing_mode_automatic)
 {
-#ifdef HAVE_CPPAMP
+  auto accView = concurrency::accelerator().create_view(qmode);
 
-  concurrency::array_view<const real, 1> A(size, pA);
-  concurrency::array_view<const real, 1> B(size, pB);
-  concurrency::array_view<real, 1> C(size, pC);
-  C.discard_data();
-  parallel_for_each(B.extent, [=](concurrency::index<1> idx) restrict(amp)
+  cv::Mat src1_;
+  if (flags & cv::GEMM_1_T)
+    src1_ = src1.t();
+  else
+    src1_ = src1;
+
+  CV_Assert(src1_.isContinuous() && src2.isContinuous());
+  CV_Assert(src1_.cols == ((flags & cv::GEMM_2_T)? src2.cols : src2.rows));
+
+  const int dstRows = (flags & cv::GEMM_1_T)? src1.cols : src1.rows;
+  const int dstCols = (flags & cv::GEMM_2_T)? src2.rows : src2.cols;
+  if (dst.rows != dstRows || dst.cols != dstCols || dst.type() != CV_REAL)
+    dst.create(dstRows, dstCols, CV_REAL);
+
+  const int numBlocks = (src1_.rows - 1)/ rowBlockSize + 1;
+  for (int block = 0; block < numBlocks; ++block)
   {
-    C[idx] = A[idx] * B[idx];
-  });
-  C.synchronize();
+    int rowStart = block * rowBlockSize;
+    int numRows = (block < numBlocks - 1)? rowBlockSize : src1_.rows - (numBlocks - 1) * rowBlockSize;
 
-#else
-  const cv::Mat A(1, size, CV_REAL, const_cast<real *>(pA));  // alias
-  const cv::Mat B(1, size, CV_REAL, const_cast<real *>(pB));  // alias
-  cv::Mat C(1, size, CV_REAL, pC);  // alias
-  cv::multiply(A, B, C);
-#endif
+    concurrency::array_view<const real, 2> src1_view(numRows, src1_.cols, src1_.ptr<real>(rowStart, 0));
+    concurrency::array_view<const real, 2> src2_view(src2.rows, src2.cols, (real *)(src2.data));
+    concurrency::array_view<real, 2> dst_view(numRows, dstCols, dst.ptr<real>(rowStart, 0));
+    dst_view.discard_data();
+
+    // This function takes column-major matrices.
+    // We just have to switch src1 and src2.
+    ampblas::gemm<real>(
+      accView,
+      (flags & cv::GEMM_2_T)? ampblas::transpose::trans : ampblas::transpose::no_trans,
+      ampblas::transpose::no_trans,
+      alpha,
+      src2_view,
+      src1_view,
+      0.0,
+      dst_view);
+    dst_view.synchronize();
+  }
+
+  if (flags & cv::GEMM_3_T)
+    dst = dst.t();
 }
-*/
 
 static void matMul(
   const cv::Mat &src1,
@@ -240,6 +361,34 @@ static void matMul(
     //std::cout << "src2 (" << src2.rows << "x" << src2.cols << ") : " << std::endl;
     //printMat(src2);
 
+    static int rowBlockSize = 20000;
+    cv::Mat dst_;
+    bool doLoop = true;
+    while (doLoop)
+    {
+      try 
+      { 
+        matMul_sub_GPU(src1, src2, alpha, dst_, flags, rowBlockSize);
+        // dst_.copyTo(dst);
+        dst = dst_;
+        break;
+      }
+      catch (concurrency::accelerator_view_removed& ex) 
+      { 
+        if (rowBlockSize < 100)
+        {
+          Log("matMul: cannot recover from TDR error. rowBlockSize is %d.\n", rowBlockSize);
+          Log("  TDR exception received: %s", ex.what());
+          Log("  Error code: %X\n", ex.get_error_code());  
+          Log("  Removed reason: %X\n\n", ex.get_view_removed_reason()); 
+          doLoop = false;
+        }
+        else
+          rowBlockSize /= 2;
+      }
+    }
+
+    /*
     cv::Mat src1_;
     if (flags & cv::GEMM_1_T)
       src1_ = src1.t();
@@ -255,7 +404,7 @@ static void matMul(
     if (dst.rows != dstRows || dst.cols != dstCols || dst.type() != CV_REAL)
       dst.create(dstRows, dstCols, CV_REAL);
 
-    const int rowBlockSize = 20000;
+    static int rowBlockSize = 20000;
     const int numBlocks = (src1_.rows - 1)/ rowBlockSize + 1;
     for (int block = 0; block < numBlocks; ++block)
     {
@@ -283,6 +432,7 @@ static void matMul(
 
     if (flags & cv::GEMM_3_T)
       dst = dst.t();
+    */
   }
   else
     cv::gemm(src1, src2, alpha, 0, 0, dst, flags);
@@ -290,42 +440,31 @@ static void matMul(
   //std::cout << "dst (" << dst.rows << "x" << dst.cols << ") : " << std::endl;
   //printMat(dst);
 }
-/*
-static void matMul(
-  const cv::Mat &src1,
-  const cv::Mat &src2,
-  real alpha,
-  cv::Mat &dst,
-  int flags = 0)
-{
-#ifdef HAVE_CPPAMP
-  auto accView = concurrency::accelerator().default_view;
-  const int dstRows = (flags & cv::GEMM_1_T)? src1.cols : src1.rows;
-  const int dstCols = (flags & cv::GEMM_2_T)? src2.rows : src2.cols;
-  if (dst.rows != dstRows || dst.cols != dstCols)
-    dst.create(dstRows, dstCols, CV_REAL);
-  concurrency::array_view<const real, 2> src1_view(src1.rows, src1.cols, (real *)(src1.data));
-  concurrency::array_view<const real, 2> src2_view(src2.rows, src2.cols, (real *)(src2.data));
-  concurrency::array_view<real, 2> dst_view(dstRows, dstCols, (real *)(dst.data));
-  dst_view.discard_data();
 
-  // This function takes column-major matrices.
-  // dst^T <- src2^T * src1^T
-  ampblas::gemm<real>(
-    accView,
-    (flags & cv::GEMM_2_T)? ampblas::transpose::trans : ampblas::transpose::no_trans,
-    (flags & cv::GEMM_1_T)? ampblas::transpose::trans : ampblas::transpose::no_trans,
-    alpha,
-    src2_view,
-    src1_view,
-    0.0,
-    dst_view);
-  dst_view.synchronize();
-#else
-  cv::gemm(src1, src2, alpha, 0, 0, dst, flags);
-#endif
+// struct updateParam --------------------------------------------------------------------------------
+
+void updateParam::log() const
+{
+  if (type == updateParam::rprop)
+  {
+    Log("  training method            RPROP\n");
+    Log("  dw0                        %f\n", dw0);
+    Log("  dw_plus                    %f\n", dw_plus);
+    Log("  dw_minus                   %f\n", dw_minus);
+    Log("  dw_max                     %f\n", dw_max);
+    Log("  dw_min                     %f\n", dw_min);
+  }
+  else if (type == updateParam::bprop)
+  {
+    Log("  training method            BPROP\n");
+    Log("  initial learning rate      %f\n", learningRate);
+    Log("  final learning rate        %f\n", finalLearningRate);
+    Log("  learning rate decay rate   %f\n", learningRateDecay);
+    Log("  initial momentum           %f\n", momentum);
+    Log("  final momentum             %f\n", finalMomentum);
+    Log("  momentum delta             %f\n", momentumDelta);
+  }
 }
-*/
 
 // class NNLayer --------------------------------------------------------------------------------
 
@@ -334,7 +473,8 @@ void NNLayer::logSettings() const
   switch (type)
   {
   case perceptron:
-    Log("Tanh perceptron layer : %d -> %d, dropout ratio = %f\n", inSize, outSize, (float)dropoutRatio);
+    Log("Perceptron layer : %d -> %d, dropout ratio = %f, activation func = %s\n",
+      inSize, outSize, (float)dropoutRatio, (activType == tanh)? "tanh" : "sigmoid");
     break;
   case linearPerceptron:
     Log("Linear perceptron layer : %d -> %d, dropout ratio = %f, max weight norm = %f\n",
@@ -358,12 +498,13 @@ void NNLayer::logSettings() const
   }
 }
 
-void NNLayer::createPerceptronLayer(const int inSize_, const int outSize_, const real dropoutRatio_)
+void NNLayer::createPerceptronLayer(const int inSize_, const int outSize_, const real dropoutRatio_, const activationType aType)
 {
   type = perceptron;
   inSize = inSize_;
   outSize = outSize_;
   dropoutRatio = dropoutRatio_;
+  activType = aType;
   weight.create(inSize, outSize, CV_REAL);
   bias.create(1, outSize, CV_REAL);
 }
@@ -423,6 +564,54 @@ void NNLayer::createMaxPoolLayer(
   filterSize = filterSize_;
 }
 
+void activateTanh_sub_GPU(
+  const cv::Mat &y,
+  cv::Mat &activation,
+  cv::Mat &df,
+  int rowBlockSize,
+  concurrency::queuing_mode qmode = concurrency::queuing_mode::queuing_mode_automatic)
+{
+  auto accView = concurrency::accelerator().create_view(qmode);
+
+  const int y_rows = y.size[0];
+  const int y_cols = (int)y.total() / y.size[0];
+  const int numBlocks = (y_rows - 1)/ rowBlockSize + 1;
+  for (int block = 0; block < numBlocks; ++block)
+  {
+    int rowStart = block * rowBlockSize;
+    int numRows = (block < numBlocks - 1)? rowBlockSize : y_rows - (numBlocks - 1) * rowBlockSize;
+
+    concurrency::array_view<const real, 2> y_(numRows, y_cols, y.ptr<real>(rowStart, 0));
+    concurrency::array_view<real, 2> activation_(numRows, y_cols, activation.ptr<real>(rowStart, 0));
+    concurrency::array_view<real, 2> df_(numRows, y_cols, df.ptr<real>(rowStart, 0));
+    activation_.discard_data();
+    df_.discard_data();
+    parallel_for_each(accView, y_.extent, [=](concurrency::index<2> idx) restrict(amp)
+    {
+      real th;
+#ifdef REAL_IS_FLOAT
+      if (y_[idx] < -100)
+        th = -1;
+      else if (100 < y_[idx])
+        th = 1;
+      else
+        th = concurrency::fast_math::tanh(y_[idx] * 2 / 3);
+#else
+      if (y_[idx] < -100)
+        th = -1;
+      else if (100 < y_[idx])
+        th = 1;
+      else
+        th = concurrency::precise_math::tanh(y_[idx] * 2 / 3);
+#endif
+      activation_[idx] = real(1.7159) * th;
+      df_[idx] = real(1.7159) * 2 * (real(1.0) - th * th) / 3;
+    });
+    activation_.synchronize();
+    df_.synchronize();
+  }
+}
+
 // Calculate activation for perceptron or convolutional layers.
 //
 // calculate:
@@ -456,6 +645,38 @@ void NNLayer::activateTanh(const cv::Mat &y)
   {
     //std::cout << "y : " << y << std::endl;
 
+    static int rowBlockSize = 20000;
+    cv::Mat activation_(activation.size(), activation.type());
+    cv::Mat df_(df.size(), df.type());
+    bool doLoop = true;
+    while (doLoop)
+    {
+      try 
+      { 
+        activateTanh_sub_GPU(y, activation_, df_, rowBlockSize, concurrency::queuing_mode::queuing_mode_immediate);
+        activation = activation_;
+        df = df_;
+        break;
+      }
+      catch (concurrency::accelerator_view_removed& ex) 
+      { 
+        if (rowBlockSize < 100)
+        {
+          Log("activateTanh: cannot recover from TDR error. rowBlockSize is %d.\n", rowBlockSize);
+          Log("  TDR exception received: %s", ex.what());
+          Log("  Error code: %X\n", ex.get_error_code());  
+          Log("  Removed reason: %X\n\n", ex.get_view_removed_reason()); 
+          doLoop = false;
+        }
+        else
+          rowBlockSize /= 2;
+      }
+    }
+
+    //std::cout << "activation : " << activation << std::endl;
+    //std::cout << "df : " << df << std::endl;
+
+    /*
     const int rowBlockSize = 20000;
     const int y_rows = y.size[0];
     const int y_cols = (int)y.total() / y.size[0];
@@ -494,8 +715,7 @@ void NNLayer::activateTanh(const cv::Mat &y)
       activation_.synchronize();
       df_.synchronize();
     }
-    //std::cout << "activation : " << activation << std::endl;
-    //std::cout << "df : " << df << std::endl;
+    */
   }
   else
   {
@@ -523,6 +743,131 @@ void NNLayer::activateTanh(const cv::Mat &y)
       }
     }
     */
+  }
+}
+
+void activateSigmoid_sub_GPU(
+  const cv::Mat &y,
+  cv::Mat &activation,
+  cv::Mat &df,
+  int rowBlockSize,
+  concurrency::queuing_mode qmode = concurrency::queuing_mode::queuing_mode_automatic)
+{
+  auto accView = concurrency::accelerator().create_view(qmode);
+
+  const int y_rows = y.size[0];
+  const int y_cols = (int)y.total() / y.size[0];
+  const int numBlocks = (y_rows - 1)/ rowBlockSize + 1;
+  for (int block = 0; block < numBlocks; ++block)
+  {
+    int rowStart = block * rowBlockSize;
+    int numRows = (block < numBlocks - 1)? rowBlockSize : y_rows - (numBlocks - 1) * rowBlockSize;
+
+    concurrency::array_view<const real, 2> y_(numRows, y_cols, y.ptr<real>(rowStart, 0));
+    concurrency::array_view<real, 2> activation_(numRows, y_cols, activation.ptr<real>(rowStart, 0));
+    concurrency::array_view<real, 2> df_(numRows, y_cols, df.ptr<real>(rowStart, 0));
+    activation_.discard_data();
+    df_.discard_data();
+    parallel_for_each(accView, y_.extent, [=](concurrency::index<2> idx) restrict(amp)
+    {
+      real th;
+#ifdef REAL_IS_FLOAT
+      if (y_[idx] < -100)
+        th = real(0);
+      else if (100 < y_[idx])
+        th = real(1);
+      else
+        th = real(1) / (real(1) + concurrency::fast_math::exp(-y_[idx]));
+#else
+      if (y_[idx] < -100)
+        th = 0;
+      else if (100 < y_[idx])
+        th = 1;
+      else
+        th = 1 / (1 + concurrency::precise_math::exp(-y_[idx]));
+#endif
+      activation_[idx] = th;
+      df_[idx] = th * (real(1) - th);
+    });
+    activation_.synchronize();
+    df_.synchronize();
+  }
+}
+
+// sigmoid activation function
+//
+// calculate:
+//
+// activation = 1 / (1 + exp(-y))
+//
+// df = activation * (1 - activation)
+void NNLayer::activateSigmoid(const cv::Mat &y)
+{
+  // C++ AMP : Windows 7 では double 型は制限つきサポートになる。
+  // ・ concurrency::precise_math の関数は使用できない。
+  // ・割り算もできない。
+  //
+  // http://blogs.msdn.com/b/nativeconcurrency/archive/2012/02/07/double-precision-support-in-c-amp.aspx
+  //
+
+  if (
+#ifdef HAVE_CPPAMP
+    true
+#else
+    false
+#endif
+    && global_GPU_info.GPU_exists &&
+    (global_GPU_info.supportsDouble || 
+#ifdef REAL_IS_FLOAT
+    true
+#else
+    false
+#endif
+    ))
+  {
+    //std::cout << "y : " << y << std::endl;
+
+    static int rowBlockSize = 20000;
+    cv::Mat activation_(activation.size(), activation.type());
+    cv::Mat df_(df.size(), df.type());
+    bool doLoop = true;
+    while (doLoop)
+    {
+      try 
+      { 
+        activateSigmoid_sub_GPU(y, activation_, df_, rowBlockSize, concurrency::queuing_mode::queuing_mode_immediate);
+        activation = activation_;
+        df = df_;
+        break;
+      }
+      catch (concurrency::accelerator_view_removed& ex) 
+      { 
+        if (rowBlockSize < 100)
+        {
+          Log("activateSigmoid: cannot recover from TDR error. rowBlockSize is %d.\n", rowBlockSize);
+          Log("  TDR exception received: %s", ex.what());
+          Log("  Error code: %X\n", ex.get_error_code());  
+          Log("  Removed reason: %X\n\n", ex.get_view_removed_reason()); 
+          doLoop = false;
+        }
+        else
+          rowBlockSize /= 2;
+      }
+    }
+  }
+  else
+  {
+    cv::Mat exp_y;
+    cv::exp(-y, exp_y);
+  
+    // workaround for : activation = 1 / (1 + exp_y);
+#if defined(_OPENMP) && defined(USE_OPENMP)
+#pragma omp parallel for
+#endif
+    for (int i = 0; i < (int)exp_y.total(); ++i)
+      *(real *)(activation.data + i * sizeof(real)) = 1 / (1 + *(real *)(exp_y.data + i * sizeof(real)));
+
+    df = activation.mul(1 - activation);
   }
 }
 
@@ -661,7 +1006,10 @@ void NNLayer::forwardPropagate(const cv::Mat* &pX, const bool dropout, const boo
       // calculate df and activation, i.e.,
       // df <- f'(y),
       // activation <- f(y).
-      activateTanh(y);
+      if (activType == tanh)
+        activateTanh(y);
+      else if (activType == sigmoid)
+        activateSigmoid(y);
     }
     else if (type == linearPerceptron)
     {
@@ -834,11 +1182,71 @@ void NNLayer::forwardPropagate(const cv::Mat* &pX, const bool dropout, const boo
     // calculate df and activation, i.e.,
     // df <- f'(y),
     // activation <- f(y).
-    activateTanh(y);
+    if (activType == tanh)
+      activateTanh(y);
+    else if (activType == sigmoid)
+      activateSigmoid(y);
   }
 
   //std::cout << "activation : " << activation.row(0) << std::endl;
   pX = &activation;
+}
+
+static void UpdateWeightsRprop_sub_GPU(
+  const cv::Mat &dEdw, 
+  const updateParam &update_param,
+  cv::Mat &weight,
+  cv::Mat &dw,
+  cv::Mat &dwSign,
+  int rowBlockSize)
+{
+  const int w_rows = weight.size[0];
+  const int w_cols = (int)weight.total() / weight.size[0];
+  const int numBlocks = (w_rows - 1)/ rowBlockSize + 1;
+  for (int block = 0; block < numBlocks; ++block)
+  {
+    int rowStart = block * rowBlockSize;
+    int numRows = (block < numBlocks - 1)? rowBlockSize : w_rows - (numBlocks - 1) * rowBlockSize;
+
+    concurrency::array_view<const real, 2> dEdw_  (numRows, w_cols, dEdw.ptr<real>(rowStart, 0));
+    concurrency::array_view<real      , 2> dw_    (numRows, w_cols, dw.ptr<real>(rowStart, 0));
+    concurrency::array_view<real      , 2> weight_(numRows, w_cols, weight.ptr<real>(rowStart, 0));
+    concurrency::array_view<int       , 2> dwSign_(numRows, w_cols, dwSign.ptr<int>(rowStart, 0));
+
+    parallel_for_each(weight_.extent, [=](concurrency::index<2> idx) restrict(amp)
+    {
+      int sign = -CV_SIGN(dEdw_[idx]);
+      int ss = sign * dwSign_[idx];
+      if (ss > 0)
+      {
+        real dval = dw_[idx] * update_param.dw_plus;
+        if (dval > update_param.dw_max)
+          dval = update_param.dw_max;
+        dw_[idx] = dval;
+        weight_[idx] += dval * sign;
+      }
+      else if (ss < 0)
+      {
+        real dval = dw_[idx] * update_param.dw_minus;
+        if (dval < update_param.dw_min)
+          dval = update_param.dw_min;
+        dwSign_[idx] = 0;
+        dw_[idx] = dval;
+#if 0
+        weight_[idx] += dval * sign;
+#endif
+      }
+      else
+      {
+        dwSign_[idx] = sign;
+        weight_[idx] += dw_[idx] * sign;
+      }
+    });
+    weight_.synchronize();
+    dw_.synchronize();
+    dwSign_.synchronize();
+  }
+
 }
 
 void NNLayer::UpdateWeightsRprop(const cv::Mat &dEdw, const updateParam &update_param)
@@ -859,50 +1267,44 @@ void NNLayer::UpdateWeightsRprop(const cv::Mat &dEdw, const updateParam &update_
 #endif
     ))
   {
-    const int w_rows = weight.size[0];
-    const int w_cols = (int)weight.total() / weight.size[0];
-    const int rowBlockSize = 20000;
-    const int numBlocks = (w_rows - 1)/ rowBlockSize + 1;
-    for (int block = 0; block < numBlocks; ++block)
+    static int rowBlockSize = 20000;
+    cv::Mat weight_, dw_, dwSign_;
+    bool doLoop = true;
+    while (doLoop)
     {
-      int rowStart = block * rowBlockSize;
-      int numRows = (block < numBlocks - 1)? rowBlockSize : w_rows - (numBlocks - 1) * rowBlockSize;
+      weight.copyTo(weight_);
+      dw.copyTo(dw_);
+      dwSign.copyTo(dwSign_);
 
-      concurrency::array_view<const real, 2> dEdw_  (numRows, w_cols, dEdw.ptr<real>(rowStart, 0));
-      concurrency::array_view<real      , 2> dw_    (numRows, w_cols, dw.ptr<real>(rowStart, 0));
-      concurrency::array_view<real      , 2> weight_(numRows, w_cols, weight.ptr<real>(rowStart, 0));
-      concurrency::array_view<int       , 2> dwSign_(numRows, w_cols, dwSign.ptr<int>(rowStart, 0));
+      try 
+      { 
+        UpdateWeightsRprop_sub_GPU(
+          dEdw, 
+          update_param,
+          weight_,
+          dw_,
+          dwSign_,
+          rowBlockSize);
 
-      parallel_for_each(weight_.extent, [=](concurrency::index<2> idx) restrict(amp)
-      {
-        int sign = -CV_SIGN(dEdw_[idx]);
-        int ss = sign * dwSign_[idx];
-        if (ss > 0)
+        weight_.copyTo(weight);
+        dw_.copyTo(dw);
+        dwSign_.copyTo(dwSign);
+
+        break;
+      }
+      catch (concurrency::accelerator_view_removed& ex) 
+      { 
+        if (rowBlockSize < 100)
         {
-          real dval = dw_[idx] * update_param.dw_plus;
-          if (dval > update_param.dw_max)
-            dval = update_param.dw_max;
-          dw_[idx] = dval;
-          weight_[idx] += dval * sign;
-        }
-        else if (ss < 0)
-        {
-          real dval = dw_[idx] * update_param.dw_minus;
-          if (dval < update_param.dw_min)
-            dval = update_param.dw_min;
-          dwSign_[idx] = 0;
-          dw_[idx] = dval;
-          weight_[idx] += dval * sign;
+          Log("NNLayer::UpdateWeightsRprop: cannot recover from TDR error. rowBlockSize is %d.\n", rowBlockSize);
+          Log("  TDR exception received: %s", ex.what());
+          Log("  Error code: %X\n", ex.get_error_code());  
+          Log("  Removed reason: %X\n\n", ex.get_view_removed_reason()); 
+          doLoop = false;
         }
         else
-        {
-          dwSign_[idx] = sign;
-          weight_[idx] += dw_[idx] * sign;
-        }
-      });
-      weight_.synchronize();
-      dw_.synchronize();
-      dwSign_.synchronize();
+          rowBlockSize /= 2;
+      }
     }
   }
   else
@@ -930,7 +1332,9 @@ void NNLayer::UpdateWeightsRprop(const cv::Mat &dEdw, const updateParam &update_
         dval = std::max(dval, update_param.dw_min);
         ((char *)dwSign.data)[j] = 0;
         ((real *)dw.data)[j] = dval;
+#if 0
         ((real *)weight.data)[j] += dval * sign;
+#endif
       }
       else
       {
@@ -951,6 +1355,7 @@ void NNLayer::writeBinary(FILE *fp) const
     fwrite(weight.data, sizeof(real), weight.cols * weight.rows, fp);
     fwrite(bias.data, sizeof(real), bias.cols, fp);
     fwrite(&dropoutRatio, sizeof(dropoutRatio), 1, fp);
+    fwrite(&activType, sizeof(activType), 1, fp);
   }
   else if (type == softMax)
   {
@@ -963,6 +1368,7 @@ void NNLayer::writeBinary(FILE *fp) const
     fwrite(&numInMaps, sizeof(numInMaps), 1, fp);
     fwrite(&numOutMaps, sizeof(numOutMaps), 1, fp);
     fwrite(&dropoutRatio, sizeof(dropoutRatio), 1, fp);
+    fwrite(&activType, sizeof(activType), 1, fp);
 
     // weight is <numOutMaps>x<numInMaps>x<filter_H>x<filter_W> matrix.
     fwrite(weight.data, sizeof(real), weight.total(), fp);
@@ -993,6 +1399,7 @@ void NNLayer::readBinary(FILE *fp)
     fread(bias.data, sizeof(real), bias.cols, fp);
 
     fread(&dropoutRatio, sizeof(dropoutRatio), 1, fp);
+    fread(&activType, sizeof(activType), 1, fp);
   }
   else if (type == softMax)
   {
@@ -1009,6 +1416,7 @@ void NNLayer::readBinary(FILE *fp)
     fread(&numInMaps, sizeof(int), 1, fp);
     fread(&numOutMaps, sizeof(int), 1, fp);
     fread(&dropoutRatio, sizeof(dropoutRatio), 1, fp);
+    fread(&activType, sizeof(activType), 1, fp);
 
     // weight is <numOutMaps>x<numInMaps>x<filter_H>x<filter_W> matrix.
     cv::Mat weightSize = (cv::Mat_<int>(1, 4) << numOutMaps, numInMaps, filterSize.at<int>(0), filterSize.at<int>(1));
@@ -1097,6 +1505,19 @@ int NeuralNet::constructLayers(const std::string &layerParamStr)
     	if (getline(seg, token, ','))
         dropoutRatio = (real)atof(token.c_str());
       layers[currentLayer++].createPerceptronLayer(inSize, outSize, dropoutRatio);
+    }
+    else if (token == "G") // sigmoid perceptron layer
+    {
+    	if (!getline(seg, token, ','))
+        return 1;
+      int inSize = atoi(token.c_str());
+    	if (!getline(seg, token, ','))
+        return 1;
+      int outSize = atoi(token.c_str());
+      real dropoutRatio = 0;
+    	if (getline(seg, token, ','))
+        dropoutRatio = (real)atof(token.c_str());
+      layers[currentLayer++].createPerceptronLayer(inSize, outSize, dropoutRatio, NNLayer::sigmoid);
     }
     else if (token == "L") // linear perceptron layer
     {
@@ -1472,7 +1893,9 @@ static void UpdateBiasesRprop(const cv::Mat &grad, const updateParam &param, cv:
       dval = std::max(dval, param.dw_min);
       ((int *)dbSign.data)[j] = 0;
       ((real *)db.data)[j] = dval;
+#if 0
       ((real *)bias.data)[j] += dval * sign;
+#endif
     }
     else
     {
@@ -1503,7 +1926,7 @@ int NeuralNet::train_sub(
       // input size mismatch.
       return 1;
   }
-  else if (
+  if (
     layers[numLayers() - 1].type != NNLayer::perceptron &&
     layers[numLayers() - 1].type != NNLayer::linearPerceptron &&
     layers[numLayers() - 1].type != NNLayer::softMax)
@@ -1511,12 +1934,12 @@ int NeuralNet::train_sub(
     // The last layer should be either percertron or softMax.
     return 4;
   }
-  else if (outputs.cols != layers[numLayers() - 1].outSize)
+  if (outputs.cols != layers[numLayers() - 1].outSize)
   {
     // output size mismatch.
     return 5;
   }
-  else if (inputs.rows != outputs.rows)
+  if (inputs.rows != outputs.rows)
   {
     // number of samples mismatch.
     return 6;
@@ -1595,6 +2018,11 @@ int NeuralNet::train_sub(
     {
       E += -(real)outputs.row(s).dot(softMaxActivation.row(s)) * sampleWeights.at<real>(s);
     }
+
+    // normalize
+    cv::Mat sumSampleWeights;
+    cv::reduce(sampleWeights, sumSampleWeights, 0, CV_REDUCE_SUM);  // sum up the only column
+    E /= (*(real *)sumSampleWeights.data);
   }
   else
   {
@@ -1609,7 +2037,11 @@ int NeuralNet::train_sub(
     cv::reduce(sq, sq, 1, CV_REDUCE_SUM);  // sum up each row
     sq = sq.mul(sampleWeights);
     cv::reduce(sq, sq, 0, CV_REDUCE_SUM);  // sum up the only column
-    E = *(real *)sq.data;
+
+    // normalize
+    cv::Mat sumSampleWeights;
+    cv::reduce(sampleWeights, sumSampleWeights, 0, CV_REDUCE_SUM);  // sum up the only column
+    E = (*(real *)sq.data) / (*(real *)sumSampleWeights.data);
   }
 
   // Apply sampleWeights to the firstGrad.
@@ -1929,10 +2361,15 @@ int NeuralNet::train(
   // Copy so that values can be changed.
   updateParam update_param = update_param_;
 
-  // normalize sampleWeights
-  cv::Mat sumMat;
-  cv::reduce(sampleWeights, sumMat, 0, CV_REDUCE_SUM);  // sum up the only column
-  sampleWeights /= sumMat.at<real>(0, 0);
+  // !!! DO NOT DO THIS !!!
+  // When trained repeatedly with inputs of different sizes, 
+  // this will bias small-size inputs.
+  //
+  // // normalize sampleWeights
+  // cv::Mat sumMat;
+  // cv::reduce(sampleWeights, sumMat, 0, CV_REDUCE_SUM);  // sum up the only column
+  // const real sumSampleWeights = sumMat.at<real>(0, 0);
+  // sampleWeights /= sumSampleWeights
 
   const int numLayers = NeuralNet::numLayers();
   const int numSamples = inputs.rows;
@@ -2150,11 +2587,7 @@ int NeuralNet::train(
       (*funcToEvaluateEvery)(*this);
 
     if (_access("stopLoop", 0) != -1)
-    {
-      DeleteFileA("stopLoop");
       break;
-    }
-
   }
 
   return 0;
@@ -2421,23 +2854,45 @@ int NeuralNet::autoencode_one_layer(
     //
     // TO DO: defined(HAVE_CPPAMP) && defined(REAL_IS_FLOAT) の場合
     // NNLayer::activateTanh() を参考に高速化する。
-    cv::Mat exp_y = (real(4) / 3) * y2;
-    cv::exp(exp_y, exp_y);
-    // -----------------------------------
-    // スカラーを行列で割ると、値の大きな要素の結果が #IND となることがある。
-    // それよりも大きな値だと正しく 0 になる。
-    // activation2 = 1 - 2 / (exp_y + 1);
-    // 下のコードはその回避策。
-    // ------------------------------------
+    if (layer.activType == NNLayer::tanh)
+    {
+      cv::Mat exp_y = (real(4) / 3) * y2;
+      cv::exp(exp_y, exp_y);
+      // -----------------------------------
+      // スカラーを行列で割ると、値の大きな要素の結果が #IND となることがある。
+      // それよりも大きな値だと正しく 0 になる。
+      // activation2 = 1 - 2 / (exp_y + 1);
+      // 下のコードはその回避策。
+      // ------------------------------------
 #if defined(_OPENMP) && defined(USE_OPENMP)
 #pragma omp parallel for
 #endif
-    for (int i = 0; i < (int)exp_y.total(); ++i)
-      *(real *)(activation2.data + i * sizeof(real)) = 1 - 2 / (*(real *)(exp_y.data + i * sizeof(real)) + 1);
+      for (int i = 0; i < (int)exp_y.total(); ++i)
+        *(real *)(activation2.data + i * sizeof(real)) = 1 - 2 / (*(real *)(exp_y.data + i * sizeof(real)) + 1);
 
-    if (layer.type == NNLayer::perceptron)
-      df2 = (real(1.7159) * 2 / 3) * (1 - activation2.mul(activation2));
-    activation2 *= real(1.7159);
+      if (layer.type == NNLayer::perceptron)
+        df2 = (real(1.7159) * 2 / 3) * (1 - activation2.mul(activation2));
+      activation2 *= real(1.7159);
+    }
+    else if (layer.activType == NNLayer::sigmoid)
+    {
+      cv::Mat exp_y;
+      cv::exp(-y2, exp_y);
+      // -----------------------------------
+      // スカラーを行列で割ると、値の大きな要素の結果が #IND となることがある。
+      // それよりも大きな値だと正しく 0 になる。
+      // activation2 = 1 - 2 / (exp_y + 1);
+      // 下のコードはその回避策。
+      // ------------------------------------
+#if defined(_OPENMP) && defined(USE_OPENMP)
+#pragma omp parallel for
+#endif
+      for (int i = 0; i < (int)exp_y.total(); ++i)
+        *(real *)(activation2.data + i * sizeof(real)) = 1 / (1 + *(real *)(exp_y.data + i * sizeof(real)));
+
+      if (layer.type == NNLayer::perceptron)
+        df2 = activation2.mul(1 - activation2);
+    }
 
     // calculate error
     cv::Mat grad2;
@@ -2738,9 +3193,13 @@ int NeuralNet::autoencode(
   return 0;
 }
 
-int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs, const int minibatchSize)
+int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs, const int minibatchSize, const int outputLayer_)
 {
   const int numLayers = (int)layers.size();
+
+  int outputLayer = outputLayer_;
+  if (outputLayer == -1)
+    outputLayer = numLayers - 1;
 
   if (layers[0].type == NNLayer::maxPool)
   {
@@ -2749,8 +3208,7 @@ int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs, const int miniba
       return 1;
     layers[0].outMapSize.at<int>(1) = inputs.cols / layers[0].filterSize.at<int>(1);
   }
-
-  if (layers[0].type == NNLayer::perceptron || layers[0].type == NNLayer::linearPerceptron)
+  else if (layers[0].type == NNLayer::perceptron || layers[0].type == NNLayer::linearPerceptron)
   {
     if (inputs.cols != layers[0].inSize)
     {
@@ -2767,24 +3225,30 @@ int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs, const int miniba
       // number of input feature maps of layer 0 should be 1
       return 4;
   }
-  else if (
-    layers[numLayers - 1].type != NNLayer::perceptron &&
-    layers[numLayers - 1].type != NNLayer::linearPerceptron &&
-    layers[numLayers - 1].type != NNLayer::softMax)
+
+  if (
+    layers[outputLayer].type != NNLayer::perceptron &&
+    layers[outputLayer].type != NNLayer::linearPerceptron &&
+    layers[outputLayer].type != NNLayer::maxPool &&
+    layers[outputLayer].type != NNLayer::softMax)
   {
     return 5;
   }
 
   const int numSamples = inputs.size[0];
   const int batchSize = (minibatchSize == 0)? numSamples : minibatchSize;
-  outputs.create(numSamples, layers[numLayers - 1].outSize, CV_REAL);
+  if (layers[outputLayer].type == NNLayer::maxPool)
+    // outputLayer が maxPool の場合、すべての map を一行に変形したものを返す。
+    outputs.create(numSamples, layers[outputLayer].numOutMaps * layers[outputLayer].outMapSize.at<int>(0) * layers[outputLayer].outMapSize.at<int>(1), CV_REAL);
+  else
+    outputs.create(numSamples, layers[outputLayer].outSize, CV_REAL);
 
   // この関数は funcToEvaluateEvery() を通して NeuralNet::train() の内部からも呼ばれることがある。
   // すべてのレイヤーの activation と df のサイズを復元できるよう、保存しておく。
-  std::vector<cv::Mat> orig_activation(numLayers);
-  std::vector<cv::Mat> orig_df(numLayers);
+  std::vector<cv::Mat> orig_activation(outputLayer + 1);
+  std::vector<cv::Mat> orig_df(outputLayer + 1);
 
-  for (int i = 0; i < numLayers; ++i)
+  for (int i = 0; i <= outputLayer; ++i)
   {
     // 保存
     orig_activation[i] = layers[i].activation;
@@ -2833,10 +3297,17 @@ int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs, const int miniba
   if (minibatchSize == 0)
   {
     const cv::Mat *pX = &inputs;
-    for (int i = 0; i < numLayers; ++i)
+    for (int i = 0; i <= outputLayer; ++i)
       layers[i].forwardPropagate(pX, false);
 
-    pX->copyTo(outputs);
+    if (layers[outputLayer].type == NNLayer::maxPool)
+    {
+      // *pX is 4D <num samples>x<numOutMaps>x<out_H>x<out_W> matrix.
+      // output is 2D <num samples>x<numOutMaps x out_H x out_W> matrix.
+      memcpy(outputs.data, pX->data, pX->step[0] * numSamples);
+    }
+    else
+      pX->copyTo(outputs);
   }
   else
   {
@@ -2852,15 +3323,18 @@ int NeuralNet::predict(const cv::Mat &inputs, cv::Mat &outputs, const int miniba
       ChooseSamples(inputs, inputs_sub, sampleHead, minibatchSize, permutation);
 
       const cv::Mat *pX = &inputs_sub;
-      for (int i = 0; i < numLayers; ++i)
+      for (int i = 0; i <= outputLayer; ++i)
         layers[i].forwardPropagate(pX, false);
 
       int numOutRows = (sampleHead + minibatchSize < numSamples)? minibatchSize : (numSamples - sampleHead);
-      pX->rowRange(0, numOutRows).copyTo(outputs.rowRange(sampleHead, sampleHead + numOutRows));
+      if (layers[outputLayer].type == NNLayer::maxPool)
+        memcpy(outputs.data + outputs.step[0] * sampleHead, pX->data, pX->step[0] * numOutRows);
+      else
+        pX->rowRange(0, numOutRows).copyTo(outputs.rowRange(sampleHead, sampleHead + numOutRows));
     }
   }
 
-  for (int i = 0; i < numLayers; ++i)
+  for (int i = 0; i <= outputLayer; ++i)
   {
     // 復元
     layers[i].activation = orig_activation[i];

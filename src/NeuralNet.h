@@ -19,12 +19,14 @@
 typedef float real;
 #define CV_REAL CV_32F
 #define REAL_EPSILON FLT_EPSILON
+#define REAL_MIN FLT_MIN
 const char realStr[] = "float";
 #else
 // double ”Å
 typedef double real;
 #define CV_REAL CV_64F
 #define REAL_EPSILON DBL_EPSILON
+#define REAL_MIN DBL_MIN
 const char realStr[] = "double";
 #endif
 
@@ -47,6 +49,8 @@ struct updateParam
   real dw_max;
   real dw_min;
 
+  void log() const;
+
   updateParam() : type(rprop),
     learningRate((real)0.1), finalLearningRate((real)0.00001), learningRateDecay((real)0.998),
     momentum((real)0), finalMomentum((real)0.9), momentumDelta((real)0.0045),
@@ -60,6 +64,10 @@ class NNLayer
   enum layerType {none, perceptron, linearPerceptron, convolution, maxPool, softMax};
 
   layerType type;
+
+  enum activationType {tanh, sigmoid};
+
+  activationType activType;
 
   // for perceptron, linearPerceptron and softMax ------------------------------------------------
   int inSize;
@@ -105,6 +113,7 @@ class NNLayer
 
   void forwardPropagate(const cv::Mat* &pX, const bool dropout = false, const bool copyBackDropout = false);
   void activateTanh(const cv::Mat &y);
+  void activateSigmoid(const cv::Mat &y);
   void activateSoftMax(const cv::Mat &y);
   void UpdateWeightsRprop(const cv::Mat &dEdw, const updateParam &param);
 
@@ -113,12 +122,12 @@ class NNLayer
 
 public:
 
-  NNLayer() : type(none), dropoutRatio(0), maxWeightNorm(0) {}
+  NNLayer() : type(none), activType(tanh), dropoutRatio(0), maxWeightNorm(0) {}
 
   void logSettings() const;
 
   // Create perceptron layer whose activation function is 1.7159 * tanh(y * 2 / 3).
-  void createPerceptronLayer(const int inSize, const int outSize, const real dropoutRatio = 0);
+  void createPerceptronLayer(const int inSize, const int outSize, const real dropoutRatio = 0, const activationType aType = tanh);
 
   // Create perceptron layer whose activation function is the identity function.
   void createLinearPerceptronLayer(
@@ -236,7 +245,12 @@ public:
     std::vector<real> &E           // out : errors.
     );
 
-  int predict(const cv::Mat &inputs, cv::Mat &outputs, const int minibatchSize = 0);
+  int predict(
+    const cv::Mat &inputs,
+    cv::Mat &outputs,
+    const int minibatchSize = 0,
+    const int outputLayer = -1 // -1 means that the output comes out from the last layer.
+    );
 
   int writeBinary(const char* filename) const;
   int readBinary(const char* filename);
